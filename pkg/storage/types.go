@@ -32,6 +32,7 @@ type BagDetailed struct {
 	PieceSize  uint32 `json:"piece_size"`
 	BagSize    uint64 `json:"bag_size"`
 	MerkleHash string `json:"merkle_hash"`
+	Path       string `json:"path"`
 }
 
 type Bag struct {

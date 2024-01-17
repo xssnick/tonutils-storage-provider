@@ -14,6 +14,7 @@ import (
 	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/ton"
+	"github.com/xssnick/tonutils-go/ton/wallet"
 	"github.com/xssnick/tonutils-storage-provider/config"
 	ldb "github.com/xssnick/tonutils-storage-provider/internal/db/leveldb"
 	"github.com/xssnick/tonutils-storage-provider/internal/server"
@@ -142,13 +143,35 @@ func main() {
 		}
 	}
 
+	api := ton.NewAPIClient(lc).WithRetry(2)
+	w, err := wallet.FromPrivateKey(api, cfg.ProviderKey, wallet.V3R2)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to load wallet")
+	}
+
+	var balance = "???"
+	master, err := api.CurrentMasterchainInfo(context.Background())
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to get master block to check wallet balance")
+	} else {
+		bl, err := w.GetBalance(context.Background(), master)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to get wallet balance to check")
+		}
+		balance = bl.String()
+
+		if bl.Nano().Cmp(tlb.MustFromTON("0.5").Nano()) < 0 {
+			log.Warn().Str("balance", balance+" TON").Msg("wallet balance is low, topup it")
+		}
+	}
+
+	log.Info().Str("address", w.WalletAddress().String()).Str("balance", balance+" TON").Msg("provider wallet initialized")
+
 	svc, err := service.NewService(
-		ton.NewAPIClient(lc).WithRetry(2),
+		api,
 		storage.NewClient(stg.BaseURL, cred),
 		db,
-		cfg.ProviderKey,
-		address.MustParseAddr(cfg.WithdrawalTONAddress),
-		tlb.MustFromTON(cfg.MinWithdrawalTONAmount),
+		w,
 		tlb.MustFromTON(cfg.MinRatePerMBDay),
 		stg.SpaceToProvideMegabytes<<20,
 		cfg.MinSpan, cfg.MaxSpan,
@@ -159,10 +182,10 @@ func main() {
 
 	_ = server.NewServer(dhtClient, gate, cfg.ADNLKey, svc, log.Logger.With().Str("source", "server").Logger())
 
-	/*err = svc.AddBag(context.Background(), address.MustParseAddr("EQAgGOHNMoAIGu1sJr_T3VVR2nLgw88ddW_I2hqhgWvlA36D"), 192*(1<<20))
+	err = svc.AddBag(context.Background(), address.MustParseAddr("EQClFiUd5JFmBGQfKlMyCWvIExZDtJwfFQCMnMMJiNL8hG5D"))
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to add bag")
-	}*/
+	}
 
 	log.Info().Hex("provider_key", cfg.ProviderKey.Public().(ed25519.PublicKey)).Msg("service started")
 

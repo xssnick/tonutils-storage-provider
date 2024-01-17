@@ -77,7 +77,7 @@ func (c *Client) StartDownload(ctx context.Context, bagId []byte, downloadAll bo
 	return nil
 }
 
-func (c *Client) RemoveBag(ctx context.Context, bagId []byte) error {
+func (c *Client) RemoveBag(ctx context.Context, bagId []byte, withFiles bool) error {
 	type request struct {
 		BagID     string `json:"bag_id"`
 		WithFiles bool   `json:"with_files"`
@@ -86,7 +86,7 @@ func (c *Client) RemoveBag(ctx context.Context, bagId []byte) error {
 	var res Result
 	if err := c.doRequest(ctx, "POST", "/api/v1/remove", request{
 		BagID:     hex.EncodeToString(bagId),
-		WithFiles: true,
+		WithFiles: withFiles,
 	}, &res); err != nil {
 		return fmt.Errorf("failed to do request: %w", err)
 	}

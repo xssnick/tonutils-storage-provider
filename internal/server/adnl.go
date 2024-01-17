@@ -13,8 +13,8 @@ import (
 )
 
 type Service interface {
-	AddBag(ctx context.Context, contractAddr *address.Address, size uint64) error
-	GetStorageInfo() (pub ed25519.PublicKey, withdrawAddress *address.Address, minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins)
+	AddBag(ctx context.Context, contractAddr *address.Address) error
+	GetStorageInfo() (withdrawAddress *address.Address, minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins)
 }
 
 type Server struct {
@@ -105,15 +105,14 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 
 		switch q := query.Data.(type) {
 		case StorageRatesRequest:
-			pub, wa, minSpan, maxSpan, av, rate := s.svc.GetStorageInfo()
+			wa, minSpan, maxSpan, av, rate := s.svc.GetStorageInfo()
 
 			// TODO: dynamic rate depending on size option support
 
 			err := peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &StorageRatesResponse{
 				Available:        av >= q.Size,
-				PubKey:           pub,
 				RatePerMBDay:     rate.Nano().Bytes(),
-				RewardAddress:    wa.Data(),
+				Key:              wa.Data(),
 				SpaceAvailableMB: av,
 				MinSpan:          minSpan,
 				MaxSpan:          maxSpan,
@@ -124,7 +123,7 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 		case StorageRequest:
 			addr := address.NewAddress(0, 0, q.ContractAddress)
 
-			err := s.svc.AddBag(ctx, addr, q.Size)
+			err := s.svc.AddBag(ctx, addr)
 
 			if err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &StorageResponse{
 				Agreed: err == nil,

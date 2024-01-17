@@ -16,9 +16,8 @@ type StorageRatesRequest struct {
 
 type StorageRatesResponse struct {
 	Available        bool   `tl:"bool"`
-	PubKey           []byte `tl:"int256"`
 	RatePerMBDay     []byte `tl:"bytes"`
-	RewardAddress    []byte `tl:"int256"`
+	Key              []byte `tl:"int256"`
 	SpaceAvailableMB uint64 `tl:"long"`
 	MinSpan          uint32 `tl:"int"`
 	MaxSpan          uint32 `tl:"int"`
@@ -26,7 +25,6 @@ type StorageRatesResponse struct {
 
 type StorageRequest struct {
 	ContractAddress []byte `tl:"int256"`
-	Size            uint64 `tl:"long"`
 }
 
 type StorageResponse struct {

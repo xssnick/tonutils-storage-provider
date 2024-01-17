@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"github.com/rs/zerolog/log"
+	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-go/ton"
@@ -41,17 +42,17 @@ func main() {
 
 	println(w.WalletAddress().String())
 
-	sz := uint64(188249875)
+	sz := uint64(46749448209)
 	psz := uint32(128 * 1024)
-	hash, _ := hex.DecodeString("85d0998dcf325b6fee4f529d4dcf66fb253fc39c59687c82a0ef7fc96fed4c9f")
-	merkle, _ := hex.DecodeString("1d35ba415ceda44cc2df559c07033cc8132f4865d0777303fb00214ec1d6d312")
+	hash, _ := hex.DecodeString("70b9e62c6123d15ae42b23e8857c9a4b12a9997606f72cf9f548fe09c1c25cb5")
+	merkle, _ := hex.DecodeString("acaaf3306ce628b18c62bd074b263c2354b1fd156eab189d4398db02f40ed09c")
 
-	providerKey, _ := hex.DecodeString("5c20cbca9dc9cd57f8693e1ab9d15e823dc3f7c92becdbabbc3137708fdc59e1")
+	providerKey := address.MustParseAddr("UQA-4idHnBmZDJSe28OGrBK7DZDw7R6XlScT0qeGeq7wT3su")
 	addr, si, body, err := contract.PrepareV1DeployData(hash, merkle, sz, psz, w.WalletAddress(), []contract.ProviderV1{
 		{
-			Key:           providerKey,
-			Span:          120,
-			PricePerMBDay: tlb.MustFromTON("0.03"),
+			Address:       providerKey,
+			MaxSpan:       200,
+			PricePerMBDay: tlb.MustFromTON("0.0005"),
 		},
 	})
 	if err != nil {
@@ -63,7 +64,7 @@ func main() {
 	ctx := context.Background()
 	for {
 		ctx, _ = api.Client().StickyContextNextNode(ctx)
-		// if len(os.Args) > 1 && os.Args[1] == "deploy" {
+		//if len(os.Args) > 1 && os.Args[1] == "deploy" {
 		_, _, _, err = w.DeployContractWaitTransaction(ctx, tlb.MustFromTON("0.5"), body, si.Code, si.Data)
 		if err != nil {
 			log.Error().Err(err).Msg("failed to deploy contract")
@@ -71,7 +72,7 @@ func main() {
 		}
 
 		println("contract deployed", addr.String())
-		// }
+		//}
 		break
 	}
 
@@ -104,7 +105,7 @@ func main() {
 		aa, _ := api.GetAccount(ctx, master, addr)
 		println(aa.Data.Dump())
 		println(pf.Dump())
-		res, err := api.RunGetMethod(ctx, master, addr, "verify_proof", new(big.Int).SetBytes(providerKey), pf)
+		res, err := api.RunGetMethod(ctx, master, addr, "verify_proof", new(big.Int).SetBytes(providerKey.Data()), pf)
 		if err != nil {
 			log.Fatal().Err(err).Msg("failed to verify_proof")
 		}
