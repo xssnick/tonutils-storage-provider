@@ -21,15 +21,14 @@ type StorageConfig struct {
 }
 
 type Config struct {
-	ADNLKey              ed25519.PrivateKey
-	ProviderKey          ed25519.PrivateKey
-	ListenAddr           string
-	ExternalIP           string
-	WithdrawalTONAddress string
-	MinRatePerMBDay      string
-	MinSpan              uint32
-	MaxSpan              uint32
-	Storages             []StorageConfig
+	ADNLKey         ed25519.PrivateKey
+	ProviderKey     ed25519.PrivateKey
+	ListenAddr      string
+	ExternalIP      string
+	MinRatePerMBDay string
+	MinSpan         uint32
+	MaxSpan         uint32
+	Storages        []StorageConfig
 }
 
 func checkIPAddress(ip string) string {
@@ -143,13 +142,12 @@ func LoadConfig(path string) (*Config, error) {
 		}
 
 		cfg := &Config{
-			ADNLKey:              private,
-			ProviderKey:          providerPrivate,
-			ListenAddr:           "0.0.0.0:18555",
-			WithdrawalTONAddress: "",
-			MinRatePerMBDay:      "0.0001",
-			MinSpan:              600,
-			MaxSpan:              86400 * 2,
+			ADNLKey:         private,
+			ProviderKey:     providerPrivate,
+			ListenAddr:      "0.0.0.0:18555",
+			MinRatePerMBDay: "0.0001",
+			MinSpan:         600,
+			MaxSpan:         86400 * 2,
 			Storages: []StorageConfig{
 				{
 					BaseURL:                 "http://127.0.0.1:17555",

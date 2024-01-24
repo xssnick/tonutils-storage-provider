@@ -8,7 +8,6 @@ import (
 	"flag"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/adnl"
 	"github.com/xssnick/tonutils-go/adnl/dht"
 	"github.com/xssnick/tonutils-go/liteclient"
@@ -22,7 +21,6 @@ import (
 	"github.com/xssnick/tonutils-storage-provider/pkg/storage"
 	dlog "log"
 	"net"
-	"os"
 )
 
 var (
@@ -73,11 +71,6 @@ func main() {
 		}
 	} else {
 		log.Fatal().Err(err).Msg("please set your external (public) ip in config")
-	}
-
-	if cfg.WithdrawalTONAddress == "" {
-		log.Info().Msg("please set rewards withdrawal address in config.json to start")
-		os.Exit(1)
 	}
 
 	var lsCfg *liteclient.GlobalConfig
@@ -171,6 +164,7 @@ func main() {
 		api,
 		storage.NewClient(stg.BaseURL, cred),
 		db,
+		cfg.ProviderKey,
 		w,
 		tlb.MustFromTON(cfg.MinRatePerMBDay),
 		stg.SpaceToProvideMegabytes<<20,
@@ -180,12 +174,7 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to init service")
 	}
 
-	_ = server.NewServer(dhtClient, gate, cfg.ADNLKey, svc, log.Logger.With().Str("source", "server").Logger())
-
-	err = svc.AddBag(context.Background(), address.MustParseAddr("EQClFiUd5JFmBGQfKlMyCWvIExZDtJwfFQCMnMMJiNL8hG5D"))
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to add bag")
-	}
+	server.NewServer(dhtClient, gate, cfg.ADNLKey, cfg.ProviderKey, svc, log.Logger.With().Str("source", "server").Logger())
 
 	log.Info().Hex("provider_key", cfg.ProviderKey.Public().(ed25519.PublicKey)).Msg("service started")
 

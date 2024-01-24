@@ -1,4 +1,4 @@
-package server
+package transport
 
 import "github.com/xssnick/tonutils-go/tl"
 
@@ -7,7 +7,9 @@ func init() {
 	tl.Register(StorageRatesResponse{}, "storageProvider.ratesResponse available:Bool key:int256 rate_per_mb_day:bytes "+
 		"reward_address:int256 space_available_mb:long min_span:int max_span:int = storageProvider.RatesResponse")
 	tl.Register(StorageRequest{}, "storageProvider.storageRequest contract_address:int256 size:long = storageProvider.StorageRequest")
-	tl.Register(StorageResponse{}, "storageProvider.storageResponse agreed:Bool reason:string = storageProvider.StorageResponse")
+	tl.Register(StorageResponse{}, "storageProvider.storageResponse status:string reason:string downloaded:long = storageProvider.StorageResponse")
+
+	tl.Register(ProviderDHTRecord{}, "storageProvider.dhtRecord adnl_key:int256 = storageProvider.DHTRecord")
 }
 
 type StorageRatesRequest struct {
@@ -17,7 +19,7 @@ type StorageRatesRequest struct {
 type StorageRatesResponse struct {
 	Available        bool   `tl:"bool"`
 	RatePerMBDay     []byte `tl:"bytes"`
-	Key              []byte `tl:"int256"`
+	MinBounty        []byte `tl:"bytes"`
 	SpaceAvailableMB uint64 `tl:"long"`
 	MinSpan          uint32 `tl:"int"`
 	MaxSpan          uint32 `tl:"int"`
@@ -25,9 +27,16 @@ type StorageRatesResponse struct {
 
 type StorageRequest struct {
 	ContractAddress []byte `tl:"int256"`
+	ByteToProof     uint64 `tl:"long"`
 }
 
 type StorageResponse struct {
-	Agreed bool   `tl:"bool"`
-	Reason string `tl:"string"`
+	Status     string `tl:"string"`
+	Reason     string `tl:"string"`
+	Downloaded uint64 `tl:"long"`
+	Proof      []byte `tl:"bytes"`
+}
+
+type ProviderDHTRecord struct {
+	ADNLAddr []byte `tl:"int256"`
 }

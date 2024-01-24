@@ -3,38 +3,46 @@ package server
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
+	"fmt"
 	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/adnl"
 	"github.com/xssnick/tonutils-go/adnl/dht"
 	"github.com/xssnick/tonutils-go/adnl/rldp"
+	"github.com/xssnick/tonutils-go/tl"
 	"github.com/xssnick/tonutils-go/tlb"
+	"github.com/xssnick/tonutils-storage-provider/internal/service"
+	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
 	"time"
 )
 
 type Service interface {
-	AddBag(ctx context.Context, contractAddr *address.Address) error
-	GetStorageInfo() (withdrawAddress *address.Address, minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins)
+	FetchStorageInfo(ctx context.Context, contractAddr *address.Address, byteToProof uint64) (*service.StorageInfo, error)
+	GetStorageInfo() (minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins)
 }
 
 type Server struct {
-	key    ed25519.PrivateKey
-	dht    *dht.Client
-	gate   *adnl.Gateway
-	svc    Service
-	logger zerolog.Logger
+	key         ed25519.PrivateKey
+	providerKey ed25519.PrivateKey
+	dht         *dht.Client
+	gate        *adnl.Gateway
+	svc         Service
+	logger      zerolog.Logger
 
 	globalCtx context.Context
 	closer    func()
 }
 
-func NewServer(dht *dht.Client, gate *adnl.Gateway, key ed25519.PrivateKey, svc Service, logger zerolog.Logger) *Server {
+func NewServer(dht *dht.Client, gate *adnl.Gateway, key ed25519.PrivateKey, providerKey ed25519.PrivateKey, svc Service, logger zerolog.Logger) *Server {
 	s := &Server{
-		key:    key,
-		dht:    dht,
-		gate:   gate,
-		svc:    svc,
-		logger: logger,
+		key:         key,
+		providerKey: providerKey,
+		dht:         dht,
+		gate:        gate,
+		svc:         svc,
+		logger:      logger,
 	}
 	s.globalCtx, s.closer = context.WithCancel(context.Background())
 	s.gate.SetConnectionHandler(s.bootstrapPeer)
@@ -52,12 +60,12 @@ func NewServer(dht *dht.Client, gate *adnl.Gateway, key ed25519.PrivateKey, svc 
 
 			logger.Debug().Msg("updating our address record")
 
-			ctx, cancel := context.WithTimeout(s.globalCtx, 180*time.Second)
+			ctx, cancel := context.WithTimeout(s.globalCtx, 300*time.Second)
 			err := s.updateDHT(ctx)
 			cancel()
 
 			if err != nil {
-				logger.Debug().Msg("failed to update our DHT address record, will retry...")
+				logger.Debug().Err(err).Msg("failed to update our DHT address record, will retry...")
 
 				// on err, retry sooner
 				wait = 5 * time.Second
@@ -74,16 +82,25 @@ func (s *Server) updateDHT(ctx context.Context) error {
 	addr := s.gate.GetAddressList()
 
 	ctxStore, cancel := context.WithTimeout(ctx, 90*time.Second)
-	stored, id, err := s.dht.StoreAddress(ctxStore, addr, 10*time.Minute, s.key, 8)
+	stored, id, err := s.dht.StoreAddress(ctxStore, addr, 30*time.Minute, s.key, 0)
 	cancel()
 	if err != nil && stored == 0 {
-		return err
+		return fmt.Errorf("failed to store address: %w", err)
 	}
 
-	// make sure it was saved
-	_, _, err = s.dht.FindAddresses(ctx, id)
+	pID := adnl.PublicKeyED25519{Key: s.providerKey.Public().(ed25519.PublicKey)}
+	data, err := tl.Serialize(transport.ProviderDHTRecord{
+		ADNLAddr: id,
+	}, true)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to serialize data for dht: %w", err)
+	}
+
+	ctxStore, cancel = context.WithTimeout(ctx, 90*time.Second)
+	stored, id, err = s.dht.Store(ctx, pID, []byte("storage-provider"), 0, data, dht.UpdateRuleSignature{}, 30*time.Minute, s.providerKey, 0)
+	cancel()
+	if err != nil && stored == 0 {
+		return fmt.Errorf("failed to store storage-provider record in dht: %w", err)
 	}
 
 	s.logger.Debug().Int("nodes", stored).Msg("our address record updated")
@@ -104,15 +121,15 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 		defer cancel()
 
 		switch q := query.Data.(type) {
-		case StorageRatesRequest:
-			wa, minSpan, maxSpan, av, rate := s.svc.GetStorageInfo()
+		case transport.StorageRatesRequest:
+			minSpan, maxSpan, av, rate := s.svc.GetStorageInfo()
 
 			// TODO: dynamic rate depending on size option support
 
-			err := peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &StorageRatesResponse{
+			err := peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &transport.StorageRatesResponse{
 				Available:        av >= q.Size,
 				RatePerMBDay:     rate.Nano().Bytes(),
-				Key:              wa.Data(),
+				MinBounty:        tlb.MustFromTON("0.05").Nano().Bytes(),
 				SpaceAvailableMB: av,
 				MinSpan:          minSpan,
 				MaxSpan:          maxSpan,
@@ -120,15 +137,39 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 			if err != nil {
 				return err
 			}
-		case StorageRequest:
+		case transport.StorageRequest:
 			addr := address.NewAddress(0, 0, q.ContractAddress)
 
-			err := s.svc.AddBag(ctx, addr)
+			var resp transport.StorageResponse
+			info, err := s.svc.FetchStorageInfo(ctx, addr, q.ByteToProof)
+			if err != nil {
+				reason := err.Error()
+				switch {
+				case errors.Is(err, service.ErrLowBalance):
+				case errors.Is(err, service.ErrLowBounty):
+				case errors.Is(err, service.ErrNotDeployed):
+				case errors.Is(err, service.ErrTooLowRate):
+				case errors.Is(err, service.ErrTooShortSpan):
+				case errors.Is(err, service.ErrTooLongSpan):
+				case errors.Is(err, service.ErrNoSpace):
+				default:
+					reason = "internal provider error"
+					log.Warn().Err(err).Str("addr", addr.String()).Msg("internal provider error")
+				}
 
-			if err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &StorageResponse{
-				Agreed: err == nil,
-				Reason: err.Error(),
-			}); err != nil {
+				resp = transport.StorageResponse{
+					Status: "error",
+					Reason: reason,
+				}
+			} else {
+				resp = transport.StorageResponse{
+					Status:     info.Status,
+					Downloaded: info.Downloaded,
+					Proof:      info.Proof,
+				}
+			}
+
+			if err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &resp); err != nil {
 				return err
 			}
 		}
