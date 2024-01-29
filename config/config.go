@@ -150,7 +150,7 @@ func LoadConfig(path string) (*Config, error) {
 			MaxSpan:         86400 * 2,
 			Storages: []StorageConfig{
 				{
-					BaseURL:                 "http://127.0.0.1:17555",
+					BaseURL:                 "http://127.0.0.1:9955",
 					SpaceToProvideMegabytes: 32 * 1024,
 				},
 			},
