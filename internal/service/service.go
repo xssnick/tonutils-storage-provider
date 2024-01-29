@@ -114,7 +114,7 @@ func (s *Service) GetStorageInfo() (minSpan, maxSpan uint32, spaceAvailable uint
 var ErrNotDeployed = fmt.Errorf("contract is not deployed")
 var ErrTooShortSpan = fmt.Errorf("too short proof time")
 var ErrTooLongSpan = fmt.Errorf("too long proof time")
-var ErrLowBalance = fmt.Errorf("contract available balance should be at least 0.08 TON")
+var ErrLowBalance = fmt.Errorf("storage denied, available balance should be at least 0.08 TON")
 var ErrLowBounty = fmt.Errorf("bounty should be at least 0.05 TON to cover fees")
 var ErrTooLowRate = fmt.Errorf("too low rate per mb")
 var ErrNoSpace = fmt.Errorf("not enough free space to store requested bag")
