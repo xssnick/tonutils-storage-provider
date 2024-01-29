@@ -80,7 +80,7 @@ func main() {
 			log.Fatal().Err(err).Msg("failed to load ton network config from file")
 		}
 	} else {
-		lsCfg, err = liteclient.GetConfigFromUrl(context.Background(), "https://ton.org/testnet-global.config.json")
+		lsCfg, err = liteclient.GetConfigFromUrl(context.Background(), "https://ton.org/global.config.json")
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to to download ton config, we will take it from static cache")
 
