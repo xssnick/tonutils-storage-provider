@@ -28,6 +28,7 @@ type Config struct {
 	MinRatePerMBDay string
 	MinSpan         uint32
 	MaxSpan         uint32
+	MaxBagSizeBytes uint64
 	Storages        []StorageConfig
 }
 
@@ -148,6 +149,7 @@ func LoadConfig(path string) (*Config, error) {
 			MinRatePerMBDay: "0.0001",
 			MinSpan:         600,
 			MaxSpan:         86400 * 2,
+			MaxBagSizeBytes: 4096 << 20,
 			Storages: []StorageConfig{
 				{
 					BaseURL:                 "http://127.0.0.1:9955",
@@ -178,9 +180,13 @@ func LoadConfig(path string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse config: %w", err)
 		}
+
+		if cfg.MaxBagSizeBytes == 0 {
+			cfg.MaxBagSizeBytes = 4096 << 20
+		}
+
 		return &cfg, nil
 	}
-	println(path)
 
 	return nil, err
 }

@@ -167,7 +167,7 @@ func main() {
 		cfg.ProviderKey,
 		w,
 		tlb.MustFromTON(cfg.MinRatePerMBDay),
-		stg.SpaceToProvideMegabytes<<20,
+		stg.SpaceToProvideMegabytes<<20, cfg.MaxBagSizeBytes,
 		cfg.MinSpan, cfg.MaxSpan,
 	)
 	if err != nil {

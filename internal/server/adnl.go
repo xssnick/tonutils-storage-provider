@@ -20,7 +20,7 @@ import (
 
 type Service interface {
 	FetchStorageInfo(ctx context.Context, contractAddr *address.Address, byteToProof uint64) (*service.StorageInfo, error)
-	GetStorageInfo() (minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins)
+	GetStorageInfo(bagSize uint64) (available bool, minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins)
 }
 
 type Server struct {
@@ -122,12 +122,10 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 
 		switch q := query.Data.(type) {
 		case transport.StorageRatesRequest:
-			minSpan, maxSpan, av, rate := s.svc.GetStorageInfo()
-
-			// TODO: dynamic rate depending on size option support
+			ok, minSpan, maxSpan, av, rate := s.svc.GetStorageInfo(q.Size)
 
 			err := peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &transport.StorageRatesResponse{
-				Available:        av >= q.Size,
+				Available:        ok,
 				RatePerMBDay:     rate.Nano().Bytes(),
 				MinBounty:        tlb.MustFromTON("0.05").Nano().Bytes(),
 				SpaceAvailableMB: av,
@@ -152,6 +150,7 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 				case errors.Is(err, service.ErrTooShortSpan):
 				case errors.Is(err, service.ErrTooLongSpan):
 				case errors.Is(err, service.ErrNoSpace):
+				case errors.Is(err, service.ErrTooBigBag):
 				default:
 					reason = "internal provider error"
 					log.Warn().Err(err).Str("addr", addr.String()).Msg("internal provider error")

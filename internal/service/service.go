@@ -16,6 +16,7 @@ import (
 	"github.com/xssnick/tonutils-storage-provider/pkg/contract"
 	"github.com/xssnick/tonutils-storage-provider/pkg/storage"
 	"math/big"
+	"strings"
 	"sync"
 )
 
@@ -49,6 +50,7 @@ type Service struct {
 	minSpan        uint32
 	maxSpan        uint32
 	spaceAllocated uint64
+	maxBagSize     uint64
 	globalCtx      context.Context
 	stop           func()
 
@@ -57,7 +59,7 @@ type Service struct {
 	mx sync.RWMutex
 }
 
-func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.PrivateKey, w *wallet.Wallet, minRatePerMb tlb.Coins, spaceAllocated uint64, minSpan, maxSpan uint32) (*Service, error) {
+func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.PrivateKey, w *wallet.Wallet, minRatePerMb tlb.Coins, spaceAllocated, maxBagSize uint64, minSpan, maxSpan uint32) (*Service, error) {
 	w.GetSpec().(*wallet.SpecV3).SetMessagesTTL(120)
 
 	globalCtx, stop := context.WithCancel(context.Background())
@@ -70,6 +72,7 @@ func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.P
 		minRatePerMb:   minRatePerMb,
 		minSpan:        minSpan,
 		maxSpan:        maxSpan,
+		maxBagSize:     maxBagSize,
 		spaceAllocated: spaceAllocated,
 		globalCtx:      globalCtx,
 		stop:           stop,
@@ -92,7 +95,7 @@ func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.P
 
 var ErrUnsupportedContract = fmt.Errorf("unsupported contract")
 
-func (s *Service) GetStorageInfo() (minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins) {
+func (s *Service) GetStorageInfo(bagSize uint64) (available bool, minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins) {
 	minSpan = s.minSpan
 	maxSpan = s.maxSpan
 	ratePerMB = s.minRatePerMb
@@ -108,6 +111,22 @@ func (s *Service) GetStorageInfo() (minSpan, maxSpan uint32, spaceAvailable uint
 			spaceAvailable -= st.Size
 		}
 	}
+
+	if spaceAvailable > s.maxBagSize {
+		spaceAvailable = s.maxBagSize
+	}
+
+	available = true
+	if spaceAvailable > bagSize {
+		// do not disclose available size
+		spaceAvailable = bagSize
+	} else if spaceAvailable < bagSize {
+		spaceAvailable = 0
+		available = false
+	}
+
+	// TODO: dynamic rate depending on size external hook
+
 	return
 }
 
@@ -118,6 +137,7 @@ var ErrLowBalance = fmt.Errorf("storage denied, available balance should be at l
 var ErrLowBounty = fmt.Errorf("bounty should be at least 0.05 TON to cover fees")
 var ErrTooLowRate = fmt.Errorf("too low rate per mb")
 var ErrNoSpace = fmt.Errorf("not enough free space to store requested bag")
+var ErrTooBigBag = fmt.Errorf("too big bag")
 
 func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Address, byteToProof uint64) (*StorageInfo, error) {
 	if !contractAddr.IsBounceable() || contractAddr.IsTestnetOnly() || contractAddr.Workchain() != 0 {
@@ -125,7 +145,7 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 	}
 	ctx = s.ton.Client().StickyContext(ctx)
 
-	log.Info().Str("addr", contractAddr.String()).Msg("received request to host bag, checking...")
+	log.Debug().Str("addr", contractAddr.String()).Msg("received request for bag, checking...")
 
 	bag, err := s.db.GetContract(contractAddr.String())
 	if err == nil {
@@ -164,6 +184,10 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 	si, err := contract.GetStorageInfoV1(ctx, s.ton, master, contractAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get storage info: %w", err)
+	}
+
+	if si.Size > s.maxBagSize {
+		return nil, ErrTooBigBag
 	}
 
 	pi, contractAvailableBalance, err := contract.GetProviderDataV1(ctx, s.ton, master, contractAddr, s.key.Public().(ed25519.PublicKey))
@@ -251,6 +275,11 @@ func (s *Service) fetchStorageInfo(ctx context.Context, bag db.StoredBag, byteTo
 
 	b, err := s.storage.GetBag(ctx, bag.BagID)
 	if err != nil {
+		if strings.HasSuffix(err.Error(), "not found") {
+			return &StorageInfo{
+				Status: "resolving",
+			}, nil
+		}
 		return nil, fmt.Errorf("failed to get bag from storage: %w", err)
 	}
 

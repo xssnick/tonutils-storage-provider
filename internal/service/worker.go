@@ -215,7 +215,6 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 					if addr.String() != contractAddr.String() {
 						log.Warn().Str("addr", contractAddr.String()).
 							Hex("merkle", mh).
-							Str("dmp", sx.Data.Dump()).
 							Hex("code_hash", sx.Code.Hash()).
 							Uint64("size", bag.BagSize).
 							Uint32("piece", bag.PieceSize).
@@ -228,9 +227,21 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 						continue
 					}
 
+					if bag.Size > s.maxBagSize && bag.Downloaded != bag.Size {
+						log.Warn().Str("addr", contractAddr.String()).
+							Uint64("size", bag.BagSize).
+							Uint32("piece", bag.PieceSize).
+							Uint64("max_size", s.maxBagSize).
+							Str("owner", ownerAddress.String()).
+							Hex("bag", bagId).
+							Msg("bag size is too big, dropping")
+
+						drop()
+						continue
+					}
+
 					log.Info().Str("addr", contractAddr.String()).
 						Hex("merkle", mh).
-						Str("dmp", sx.Data.Dump()).
 						Hex("code_hash", sx.Code.Hash()).
 						Uint64("size", bag.BagSize).
 						Uint32("piece", bag.PieceSize).
@@ -263,7 +274,7 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 
 				if bag.Downloaded != bag.Size {
 					progress := (float64(bag.Downloaded) / float64(bag.Size)) * 100
-					log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Str("progress", fmt.Sprintf("%.2f", progress)).Msg("download is still in progress, will wait and check again")
+					log.Debug().Str("addr", contractAddr.String()).Hex("bag", bagId).Str("progress", fmt.Sprintf("%.2f", progress)).Msg("download is still in progress, will wait and check again")
 					wait = 5 * time.Second
 					continue
 				}
