@@ -104,7 +104,8 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 
 	log.Info().Str("addr", contractAddr.String()).Msg("bag hosting routine is started")
 
-	var lastTxAt time.Time
+	var lastPercent float64
+	var lastTxAt, lastDownloadPercentUpdateAt time.Time
 	var wait time.Duration
 	for {
 		select {
@@ -270,11 +271,29 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 					}
 
 					verified = true
+					lastDownloadPercentUpdateAt = time.Now()
 				}
 
 				if bag.Downloaded != bag.Size {
 					progress := (float64(bag.Downloaded) / float64(bag.Size)) * 100
+					if progress > lastPercent {
+						lastPercent = progress
+						lastDownloadPercentUpdateAt = time.Now()
+					}
 					log.Debug().Str("addr", contractAddr.String()).Hex("bag", bagId).Str("progress", fmt.Sprintf("%.2f", progress)).Msg("download is still in progress, will wait and check again")
+
+					if lastDownloadPercentUpdateAt.Before(time.Now().Add(-30 * time.Minute)) {
+						log.Warn().Str("addr", contractAddr.String()).
+							Uint64("size", bag.BagSize).
+							Uint32("piece", bag.PieceSize).
+							Str("owner", ownerAddress.String()).
+							Hex("bag", bagId).
+							Msg("no download progress for > 30 minutes, dropping")
+
+						drop()
+						continue
+					}
+
 					wait = 5 * time.Second
 					continue
 				}

@@ -65,7 +65,7 @@ func NewServer(dht *dht.Client, gate *adnl.Gateway, key ed25519.PrivateKey, prov
 			cancel()
 
 			if err != nil {
-				logger.Debug().Err(err).Msg("failed to update our DHT address record, will retry...")
+				logger.Warn().Err(err).Msg("failed to update our DHT address record, will retry...")
 
 				// on err, retry sooner
 				wait = 5 * time.Second
@@ -103,7 +103,7 @@ func (s *Server) updateDHT(ctx context.Context) error {
 		return fmt.Errorf("failed to store storage-provider record in dht: %w", err)
 	}
 
-	s.logger.Debug().Int("nodes", stored).Msg("our address record updated")
+	s.logger.Info().Int("nodes", stored).Msg("our address record updated")
 
 	return nil
 }
