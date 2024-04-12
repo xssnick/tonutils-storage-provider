@@ -18,6 +18,8 @@ import (
 type providerPeer struct {
 	rldp *rldp.RLDP
 	conn adnl.Peer
+
+	mx sync.Mutex
 }
 
 type DHT interface {
@@ -40,9 +42,17 @@ func NewClient(gate *adnl.Gateway, dht DHT) *Client {
 
 func (c *Client) connect(ctx context.Context, providerKey []byte) (*providerPeer, error) {
 	c.mx.Lock()
-	defer c.mx.Unlock()
+	p := c.active[string(providerKey)]
+	if p == nil {
+		p = &providerPeer{}
+		c.active[string(providerKey)] = p
+	}
+	c.mx.Unlock()
 
-	if p := c.active[string(providerKey)]; p != nil {
+	p.mx.Lock()
+	defer p.mx.Unlock()
+
+	if p.conn != nil {
 		return p, nil
 	}
 
@@ -83,14 +93,12 @@ func (c *Client) connect(ctx context.Context, providerKey []byte) (*providerPeer
 	peer.SetDisconnectHandler(func(addr string, _ ed25519.PublicKey) {
 		c.mx.Lock()
 		defer c.mx.Unlock()
-		delete(c.active, string(key))
+
+		delete(c.active, string(providerKey))
 	})
 
-	p := &providerPeer{
-		rldp: rldp.NewClientV2(peer),
-		conn: peer,
-	}
-	c.active[string(key)] = p
+	p.rldp = rldp.NewClientV2(peer)
+	p.conn = peer
 
 	return p, nil
 }
@@ -132,4 +140,34 @@ func (c *Client) RequestStorageInfo(ctx context.Context, provider []byte, contra
 		return nil, fmt.Errorf("failed to do request: %w", err)
 	}
 	return &res, nil
+}
+
+func (c *Client) VerifyStorageADNLProof(ctx context.Context, provider []byte, contract *tonaddress.Address) ([]byte, error) {
+	p, err := c.connect(ctx, provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to provider: %w", err)
+	}
+
+	var res StorageADNLProofResponse
+	if err = p.rldp.DoQuery(ctx, 8196, StorageADNLProofRequest{ContractAddress: contract.Data()}, &res); err != nil {
+		return nil, fmt.Errorf("failed to do request: %w", err)
+	}
+
+	sr, err := tl.Serialize(ADNLProofScheme{
+		Key: provider,
+	}, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize provider id, invalid result")
+	}
+
+	if !ed25519.Verify(res.StorageKey, sr, res.Signature) {
+		return nil, fmt.Errorf("failed to verify provider adnl, invalid result")
+	}
+
+	adnlId, err := tl.Hash(adnl.PublicKeyED25519{Key: res.StorageKey})
+	if err != nil {
+		return nil, fmt.Errorf("failed to calc hash of storage key %s: %w", hex.EncodeToString(res.StorageKey), err)
+	}
+
+	return adnlId, nil
 }

@@ -3,15 +3,19 @@ package storage
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/xssnick/tonutils-go/tl"
+	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
 	"net/http"
 	"time"
 )
 
 type Client struct {
+	providerId  []byte
 	base        string
 	client      http.Client
 	credentials *Credentials
@@ -24,13 +28,14 @@ type Credentials struct {
 
 var ErrNotFound = errors.New("not found")
 
-func NewClient(base string, credentials *Credentials) *Client {
+func NewClient(base string, providerId []byte, credentials *Credentials) *Client {
 	return &Client{
 		base: base,
 		client: http.Client{
 			Timeout: 15 * time.Second,
 		},
 		credentials: credentials,
+		providerId:  providerId,
 	}
 }
 
@@ -135,4 +140,29 @@ func (c *Client) doRequest(ctx context.Context, method, url string, req, resp an
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) ProofProvider(ctx context.Context) (ed25519.PublicKey, []byte, error) {
+	type request struct {
+		ProviderID string `json:"provider_id"`
+	}
+
+	var res ADNLProofResponse
+	if err := c.doRequest(ctx, "POST", "/api/v1/sign/provider", request{
+		ProviderID: hex.EncodeToString(c.providerId),
+	}, &res); err != nil {
+		return nil, nil, fmt.Errorf("failed to do request: %w", err)
+	}
+
+	sr, err := tl.Serialize(transport.ADNLProofScheme{
+		Key: c.providerId,
+	}, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to serialize provider id, invalid result")
+	}
+
+	if !ed25519.Verify(res.Key, sr, res.Signature) {
+		return nil, nil, fmt.Errorf("failed to sign provider id, invalid result")
+	}
+	return res.Key, res.Signature, nil
 }

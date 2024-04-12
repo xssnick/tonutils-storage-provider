@@ -8,8 +8,11 @@ func init() {
 		"reward_address:int256 space_available_mb:long min_span:int max_span:int = storageProvider.RatesResponse")
 	tl.Register(StorageRequest{}, "storageProvider.storageRequest contract_address:int256 size:long = storageProvider.StorageRequest")
 	tl.Register(StorageResponse{}, "storageProvider.storageResponse status:string reason:string downloaded:long = storageProvider.StorageResponse")
+	tl.Register(StorageADNLProofRequest{}, "storageProvider.storageAdnlProofRequest contract_address:int256 = storageProvider.StorageAdnlProofRequest")
+	tl.Register(StorageADNLProofResponse{}, "storageProvider.storageAdnlProofResponse storage_key:int256 signature:bytes = storageProvider.StorageAdnlProofResponse")
 
 	tl.Register(ProviderDHTRecord{}, "storageProvider.dhtRecord adnl_key:int256 = storageProvider.DHTRecord")
+	tl.Register(ADNLProofScheme{}, "storage.tonutils.adnlProviderProof provider_key:int256 = storage.tonutils.AdnlProviderProof")
 }
 
 type StorageRatesRequest struct {
@@ -37,6 +40,19 @@ type StorageResponse struct {
 	Proof      []byte `tl:"bytes"`
 }
 
+type StorageADNLProofRequest struct {
+	ContractAddress []byte `tl:"int256"`
+}
+
+type StorageADNLProofResponse struct {
+	StorageKey []byte `tl:"int256"`
+	Signature  []byte `tl:"bytes"`
+}
+
 type ProviderDHTRecord struct {
 	ADNLAddr []byte `tl:"int256"`
+}
+
+type ADNLProofScheme struct {
+	Key []byte `tl:"int256"`
 }
