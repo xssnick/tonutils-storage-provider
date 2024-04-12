@@ -37,6 +37,7 @@ type Storage interface {
 	GetPieceProof(ctx context.Context, bagId []byte, piece uint64) ([]byte, error)
 	StartDownload(ctx context.Context, bagId []byte, downloadAll bool) error
 	RemoveBag(ctx context.Context, bagId []byte, withFiles bool) error
+	ProofProvider(ctx context.Context) (ed25519.PublicKey, []byte, error)
 }
 
 type Service struct {
@@ -128,6 +129,19 @@ func (s *Service) GetStorageInfo(bagSize uint64) (available bool, minSpan, maxSp
 	// TODO: dynamic rate depending on size external hook
 
 	return
+}
+
+func (s *Service) RequestStorageADNLProof(ctx context.Context, contractAddr *address.Address) (ed25519.PublicKey, []byte, error) {
+	_, err := s.db.GetContract(contractAddr.String())
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot get contract: %w", err)
+	}
+
+	key, signature, err := s.storage.ProofProvider(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get adnl proof: %w", err)
+	}
+	return key, signature, nil
 }
 
 var ErrNotDeployed = fmt.Errorf("contract is not deployed")

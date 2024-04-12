@@ -21,6 +21,7 @@ import (
 type Service interface {
 	FetchStorageInfo(ctx context.Context, contractAddr *address.Address, byteToProof uint64) (*service.StorageInfo, error)
 	GetStorageInfo(bagSize uint64) (available bool, minSpan, maxSpan uint32, spaceAvailable uint64, ratePerMB tlb.Coins)
+	RequestStorageADNLProof(ctx context.Context, contractAddr *address.Address) (ed25519.PublicKey, []byte, error)
 }
 
 type Server struct {
@@ -65,7 +66,7 @@ func NewServer(dht *dht.Client, gate *adnl.Gateway, key ed25519.PrivateKey, prov
 			cancel()
 
 			if err != nil {
-				logger.Debug().Err(err).Msg("failed to update our DHT address record, will retry...")
+				logger.Warn().Err(err).Msg("failed to update our DHT address record, will retry...")
 
 				// on err, retry sooner
 				wait = 5 * time.Second
@@ -103,7 +104,7 @@ func (s *Server) updateDHT(ctx context.Context) error {
 		return fmt.Errorf("failed to store storage-provider record in dht: %w", err)
 	}
 
-	s.logger.Debug().Int("nodes", stored).Msg("our address record updated")
+	s.logger.Info().Int("nodes", stored).Msg("our address record updated")
 
 	return nil
 }
@@ -171,6 +172,24 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 			if err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &resp); err != nil {
 				return err
 			}
+		case transport.StorageADNLProofRequest:
+			addr := address.NewAddress(0, 0, q.ContractAddress)
+
+			key, sign, err := s.svc.RequestStorageADNLProof(ctx, addr)
+			if err != nil {
+				log.Warn().Err(err).Str("addr", addr.String()).Msg("request storage adnl proof err")
+				return err
+			}
+
+			err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &transport.StorageADNLProofResponse{
+				StorageKey: key,
+				Signature:  sign,
+			})
+			if err != nil {
+				return err
+			}
+		default:
+			log.Debug().Type("type", q).Msg("received unknown request type")
 		}
 
 		return nil

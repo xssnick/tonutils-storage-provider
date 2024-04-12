@@ -9,6 +9,11 @@ type ProofResponse struct {
 	Proof []byte `json:"proof"`
 }
 
+type ADNLProofResponse struct {
+	Key       []byte `json:"key"`
+	Signature []byte `json:"signature"`
+}
+
 type File struct {
 	Index uint32 `json:"index"`
 	Name  string `json:"name"`

@@ -30,6 +30,8 @@ var (
 	NetworkConfigPath = flag.String("network-config", "", "Network config path to load from disk")
 )
 
+var GitCommit string
+
 func main() {
 	flag.Parse()
 
@@ -162,7 +164,7 @@ func main() {
 
 	svc, err := service.NewService(
 		api,
-		storage.NewClient(stg.BaseURL, cred),
+		storage.NewClient(stg.BaseURL, cfg.ProviderKey.Public().(ed25519.PublicKey), cred),
 		db,
 		cfg.ProviderKey,
 		w,
@@ -176,7 +178,7 @@ func main() {
 
 	server.NewServer(dhtClient, gate, cfg.ADNLKey, cfg.ProviderKey, svc, log.Logger.With().Str("source", "server").Logger())
 
-	log.Info().Hex("provider_key", cfg.ProviderKey.Public().(ed25519.PublicKey)).Msg("service started")
+	log.Info().Str("build", GitCommit).Hex("provider_key", cfg.ProviderKey.Public().(ed25519.PublicKey)).Msg("service started")
 
 	<-make(chan bool)
 }
