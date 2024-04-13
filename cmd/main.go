@@ -21,6 +21,7 @@ import (
 	"github.com/xssnick/tonutils-storage-provider/pkg/storage"
 	dlog "log"
 	"net"
+	"os"
 )
 
 var (
@@ -28,12 +29,18 @@ var (
 	DBPath            = flag.String("db", "./db", "Path to db")
 	Verbosity         = flag.Int("verbosity", 0, "Debug logs")
 	NetworkConfigPath = flag.String("network-config", "", "Network config path to load from disk")
+	Version           = flag.Bool("version", false, "Show version and exit")
 )
 
 var GitCommit string
 
 func main() {
 	flag.Parse()
+
+	if *Version {
+		println("Build version: " + GitCommit)
+		os.Exit(0)
+	}
 
 	adnl.Logger = func(v ...any) {}
 	dht.Logger = func(v ...any) {}
