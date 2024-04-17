@@ -133,7 +133,7 @@ func (c *Client) RequestStorageInfo(ctx context.Context, provider []byte, contra
 		ContractAddress: contractAddr.Data(),
 		ByteToProof:     byteToProof,
 	}, &res); err != nil {
-		if time.Since(now) > 10*time.Second {
+		if time.Since(now) > 5*time.Second {
 			// consider it as timeout and stuck connection
 			p.conn.Close()
 		}
