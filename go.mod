@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/rs/zerolog v1.31.0
 	github.com/syndtr/goleveldb v1.0.0
-	github.com/xssnick/tonutils-go v1.9.3
+	github.com/xssnick/tonutils-go v1.9.3-0.20240417085945-5d6daf793dcc
 )
 
 require (
