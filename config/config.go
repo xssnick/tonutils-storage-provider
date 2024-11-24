@@ -20,6 +20,11 @@ type StorageConfig struct {
 	SpaceToProvideMegabytes uint64
 }
 
+type CronConfig struct {
+	Enabled   bool
+	MinReward string
+}
+
 type Config struct {
 	ADNLKey         ed25519.PrivateKey
 	ProviderKey     ed25519.PrivateKey
@@ -30,6 +35,7 @@ type Config struct {
 	MaxSpan         uint32
 	MaxBagSizeBytes uint64
 	Storages        []StorageConfig
+	CRON            CronConfig
 }
 
 func checkIPAddress(ip string) string {
@@ -155,6 +161,10 @@ func LoadConfig(path string) (*Config, error) {
 					BaseURL:                 "http://127.0.0.1:9955",
 					SpaceToProvideMegabytes: 32 * 1024,
 				},
+			},
+			CRON: CronConfig{
+				Enabled:   false,
+				MinReward: "0.005",
 			},
 		}
 

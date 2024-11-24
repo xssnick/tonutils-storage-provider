@@ -435,7 +435,7 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 
 					return nil
 				} else {
-					log.Info().Str("wallet_balance", wBalance.String()).Str("bounty_before_fee", tlb.FromNanoTON(bounty).String()).Int64("sec_till_proof", (pi.LastProofAt.Unix()+int64(pi.MaxSpan))-int64(block.BlockInfo.GenUtime)).Uint64("byte", pi.ByteToProof).Hex("bag", bagId).Str("addr", contractAddr.String()).Msg("too early to proof, waiting...")
+					log.Debug().Str("wallet_balance", wBalance.String()).Str("bounty_before_fee", tlb.FromNanoTON(bounty).String()).Int64("sec_till_proof", (pi.LastProofAt.Unix()+int64(pi.MaxSpan))-int64(block.BlockInfo.GenUtime)).Uint64("byte", pi.ByteToProof).Hex("bag", bagId).Str("addr", contractAddr.String()).Msg("too early to proof, waiting...")
 				}
 
 				wait = 1 * time.Minute
