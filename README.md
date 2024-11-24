@@ -7,11 +7,11 @@ It uses alternative version of storage contract and different flow, so it is not
 ### How to setup
 
 1. Download precompiled version:
-   * [Linux AMD64](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.0/tonutils-storage-provider-linux-amd64)
-   * [Linux ARM64](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.0/tonutils-storage-provider-linux-arm64)
-   * [Windows x64](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.0/tonutils-storage-provider-x64.exe)
-   * [Mac Intel](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.0/tonutils-storage-provider-mac-amd64)
-   * [Mac Apple Silicon](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.0/tonutils-storage-provider-mac-arm64)
+   * [Linux AMD64](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.1/tonutils-storage-provider-linux-amd64)
+   * [Linux ARM64](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.1/tonutils-storage-provider-linux-arm64)
+   * [Windows x64](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.1/tonutils-storage-provider-x64.exe)
+   * [Mac Intel](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.1/tonutils-storage-provider-mac-amd64)
+   * [Mac Apple Silicon](https://github.com/xssnick/tonutils-storage-provider/releases/download/v0.3.1/tonutils-storage-provider-mac-arm64)
    * Or compile using `go build -o tonutils-storage-provider cmd/main.go`
 2. Start it `./tonutils-storage-provider-{os}-{arch}`, it will generate config.json
 3. Topup provider wallet, address will be shown in output at startup
