@@ -46,3 +46,6 @@ Example of config section:
 }
 ```
 
+### Withdraw coins from provider wallet
+
+To withdraw using this software you can enable input by using startup flag `-enable-input` and when in starts type command `withdraw [amount in TONs] [address to send]` or `help`
