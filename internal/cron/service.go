@@ -50,9 +50,10 @@ type DB interface {
 }
 
 type NextTrigger struct {
-	Next *NextTrigger
-	Addr *address.Address
-	At   int64
+	Next   *NextTrigger
+	Addr   *address.Address
+	Reward tlb.Coins
+	At     int64
 }
 
 type Service struct {
@@ -91,6 +92,7 @@ func (s *Service) StartScanner(ctx context.Context) error {
 					return nil
 				}
 
+				println("TX")
 				log.Debug().Uint64("lt", tx.LT).Msg("new tx on discovery contract")
 
 				in := tx.IO.In.AsInternal()
@@ -142,7 +144,7 @@ func (s *Service) StartScanner(ctx context.Context) error {
 						return nil
 					}
 
-					ok, next, err := s.verifyContract(context.Background(), in.SrcAddr)
+					ok, next, reward, err := s.verifyContract(context.Background(), in.SrcAddr)
 					if err != nil {
 						log.Debug().Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("failed to verify contract")
 						return nil
@@ -151,7 +153,7 @@ func (s *Service) StartScanner(ctx context.Context) error {
 						return nil
 					}
 
-					if err = s.AddTrigger(db.CronContract{ContractAddr: in.SrcAddr.String(), NextQuery: next}, true); err != nil {
+					if err = s.AddTrigger(db.CronContract{ContractAddr: in.SrcAddr.String(), NextQuery: next, Reward: reward.String()}, true); err != nil {
 						return err
 					}
 
@@ -197,6 +199,16 @@ func (s *Service) StartSender(ctx context.Context) error {
 
 		s.mx.Lock()
 		if s.trigger == nil {
+			s.mx.Unlock()
+			continue
+		}
+
+		if s.trigger.Reward.Nano().Cmp(s.minReward) < 0 {
+			log.Warn().Str("addr", s.trigger.Addr.String()).
+				Str("reward", s.trigger.Reward.String()).
+				Msg("contract dropped because reward is less than min reward")
+
+			s.trigger = s.trigger.Next
 			s.mx.Unlock()
 			continue
 		}
@@ -249,14 +261,14 @@ func (s *Service) StartVerifier(ctx context.Context) error {
 			defer cancel()
 
 			// TODO: not block
-			ok, next, err := s.verifyContract(tCtx, s.verify.Addr)
+			ok, next, reward, err := s.verifyContract(tCtx, s.verify.Addr)
 			if err != nil {
 				return err
 			} else if !ok {
 				log.Debug().Str("addr", s.verify.Addr.String()).Msg("cron contract removed")
 				_ = s.db.DeleteCronContract(s.verify.Addr.String())
 			} else {
-				if err = s.addTrigger(db.CronContract{ContractAddr: s.verify.Addr.String(), NextQuery: next}, true); err != nil {
+				if err = s.addTrigger(db.CronContract{ContractAddr: s.verify.Addr.String(), NextQuery: next, Reward: reward.String()}, true); err != nil {
 					return err
 				}
 				log.Debug().Str("addr", s.verify.Addr.String()).Int64("next", next).Msg("adding contract back to trigger, valid for the next trigger")
@@ -274,8 +286,9 @@ func (s *Service) StartVerifier(ctx context.Context) error {
 
 func (s *Service) addTrigger(c db.CronContract, toDB bool) error {
 	nextTrigger := &NextTrigger{
-		Addr: address.MustParseAddr(c.ContractAddr),
-		At:   c.NextQuery,
+		Addr:   address.MustParseAddr(c.ContractAddr),
+		At:     c.NextQuery,
+		Reward: tlb.MustFromTON(c.Reward),
 	}
 
 	if s.trigger == nil || c.NextQuery < s.trigger.At {
@@ -329,48 +342,48 @@ func (s *Service) addVerify(trig *NextTrigger) {
 	}
 }
 
-func (s *Service) verifyContract(ctx context.Context, addr *address.Address) (bool, int64, error) {
+func (s *Service) verifyContract(ctx context.Context, addr *address.Address) (bool, int64, tlb.Coins, error) {
 	master, err := s.api.GetMasterchainInfo(ctx)
 	if err != nil {
-		return false, 0, err
+		return false, 0, tlb.ZeroCoins, err
 	}
 
 	res, err := s.api.RunGetMethod(ctx, master, addr, "info")
 	if err != nil {
 		if _, ok := err.(ton.ContractExecError); ok {
 			// not initialized contract or something failed
-			return false, 0, nil
+			return false, 0, tlb.ZeroCoins, nil
 		}
-		return false, 0, fmt.Errorf("failed to get cron contract info: %w", err)
+		return false, 0, tlb.ZeroCoins, fmt.Errorf("failed to get cron contract info: %w", err)
 	}
 
 	nextCallAt, err := res.Int(0)
 	if err != nil {
-		return false, 0, fmt.Errorf("failed to get cron contract next call time: %w", err)
+		return false, 0, tlb.ZeroCoins, fmt.Errorf("failed to get cron contract next call time: %w", err)
 	}
 
 	reward, err := res.Int(1)
 	if err != nil {
-		return false, 0, fmt.Errorf("failed to get cron contract reward: %w", err)
+		return false, 0, tlb.ZeroCoins, fmt.Errorf("failed to get cron contract reward: %w", err)
 	}
 
 	balanceAfterNextCall, err := res.Int(2)
 	if err != nil {
-		return false, 0, fmt.Errorf("failed to get cron contract balance after next call: %w", err)
+		return false, 0, tlb.ZeroCoins, fmt.Errorf("failed to get cron contract balance after next call: %w", err)
 	}
 
 	if reward.Cmp(s.minReward) < 0 {
 		log.Debug().Str("addr", addr.String()).Str("min_reward", tlb.FromNanoTON(s.minReward).String()).Str("reward", tlb.FromNanoTON(reward).String()).Msg("reward is too low")
-		return false, 0, nil
+		return false, 0, tlb.ZeroCoins, nil
 	}
 
 	// should have some amount for fees
 	if balanceAfterNextCall.Cmp(tlb.MustFromTON("0.01").Nano()) <= 0 {
 		// no money for next call
-		return false, 0, nil
+		return false, 0, tlb.ZeroCoins, nil
 	}
 
-	return true, nextCallAt.Int64(), nil
+	return true, nextCallAt.Int64(), tlb.FromNanoTON(reward), nil
 }
 
 func levelUp(c *cell.Cell) *cell.Cell {
