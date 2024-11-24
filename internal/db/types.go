@@ -10,6 +10,12 @@ type StoredBag struct {
 	Status       StoredBagStatus `json:"t"`
 }
 
+type CronContract struct {
+	ContractAddr string `json:"a"`
+	NextQuery    int64  `json:"t"`
+	Reward       string `json:"r"`
+}
+
 var ErrNotFound = errors.New("not found")
 
 const (

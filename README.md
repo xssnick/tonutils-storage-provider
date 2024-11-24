@@ -24,3 +24,25 @@ It uses alternative version of storage contract and different flow, so it is not
 Contract used for providing storage is shared between many providers and can be deployed by user asking for storage. Contract is discoverable onchain if owner address and bag info is known. 
 
 Contract source can be found [here](https://github.com/xssnick/tonutils-contracts/blob/master/contracts/storage/storage-contract.fc)
+
+### CRON contracts trigger mode
+
+You can enable [cron contracts](https://github.com/xssnick/cron-contract) tracking to earn additional rewards by triggering blockchain's cron contracts deployed by other users. 
+User puts some amount of ton to cron contract and sets desired period, this software will call this contract when time has come and gets some coins to provider's wallet.
+
+To enable this mode set `Enabled` to true and set `MinReward`, recommended value is 0.005 ton.
+Example of config section: 
+
+```json
+{
+  ...
+  "Storages": [
+    ...
+  ],
+  "CRON": {
+    "Enabled": true,
+    "MinReward": "0.005"
+  }
+}
+```
+

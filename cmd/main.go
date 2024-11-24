@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
+	"github.com/pterm/pterm"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/adnl"
 	"github.com/xssnick/tonutils-go/adnl/dht"
 	"github.com/xssnick/tonutils-go/liteclient"
@@ -15,6 +18,7 @@ import (
 	"github.com/xssnick/tonutils-go/ton"
 	"github.com/xssnick/tonutils-go/ton/wallet"
 	"github.com/xssnick/tonutils-storage-provider/config"
+	"github.com/xssnick/tonutils-storage-provider/internal/cron"
 	ldb "github.com/xssnick/tonutils-storage-provider/internal/db/leveldb"
 	"github.com/xssnick/tonutils-storage-provider/internal/server"
 	"github.com/xssnick/tonutils-storage-provider/internal/service"
@@ -22,6 +26,7 @@ import (
 	dlog "log"
 	"net"
 	"os"
+	"strings"
 )
 
 var (
@@ -30,6 +35,7 @@ var (
 	Verbosity         = flag.Int("verbosity", 0, "Debug logs")
 	NetworkConfigPath = flag.String("network-config", "", "Network config path to load from disk")
 	Version           = flag.Bool("version", false, "Show version and exit")
+	EnableInput       = flag.Bool("enable-input", false, "Enable commands input mode")
 )
 
 var GitCommit string
@@ -104,6 +110,38 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to add liteserver connections from ton config")
 	}
 
+	api := ton.NewAPIClient(lc).WithRetry(2)
+	w, err := wallet.FromPrivateKey(api, cfg.ProviderKey, wallet.V3R2)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to load wallet")
+	}
+
+	if cfg.CRON.Enabled {
+		reward, err := tlb.FromTON(cfg.CRON.MinReward)
+		if err != nil {
+			log.Fatal().Err(err).Str("value", cfg.CRON.MinReward).Msg("failed to parse cron min amount from config")
+		}
+
+		cSvc := cron.NewService(db, w.WalletAddress(), api, reward.Nano())
+		go func() {
+			if err := cSvc.StartScanner(context.Background()); err != nil {
+				log.Fatal().Err(err).Msg("failed to start cron scanner")
+			}
+		}()
+
+		go func() {
+			if err := cSvc.StartVerifier(context.Background()); err != nil {
+				log.Fatal().Err(err).Msg("failed to start cron verifier")
+			}
+		}()
+
+		go func() {
+			if err := cSvc.StartSender(context.Background()); err != nil {
+				log.Fatal().Err(err).Msg("failed to start cron sender")
+			}
+		}()
+	}
+
 	gate := adnl.NewGateway(cfg.ADNLKey)
 	gate.SetExternalIP(ip)
 
@@ -145,12 +183,6 @@ func main() {
 		}
 	}
 
-	api := ton.NewAPIClient(lc).WithRetry(2)
-	w, err := wallet.FromPrivateKey(api, cfg.ProviderKey, wallet.V3R2)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to load wallet")
-	}
-
 	var balance = "???"
 	master, err := api.CurrentMasterchainInfo(context.Background())
 	if err != nil {
@@ -187,5 +219,54 @@ func main() {
 
 	log.Info().Str("build", GitCommit).Hex("provider_key", cfg.ProviderKey.Public().(ed25519.PublicKey)).Msg("service started")
 
-	<-make(chan bool)
+	if !*EnableInput {
+		<-make(chan bool)
+		return
+	}
+
+	for {
+		cmd, err := pterm.DefaultInteractiveTextInput.Show("Command")
+		if err != nil {
+			pterm.Warning.Println("unexpected input:" + err.Error())
+			continue
+		}
+
+		parts := strings.Split(cmd, " ")
+		if len(parts) == 0 {
+			continue
+		}
+
+		switch parts[0] {
+		case "withdraw":
+			if len(parts) < 3 {
+				pterm.Error.Println("Usage: withdraw [amount in TONs] [address to send]")
+				continue
+			}
+
+			amt, err := tlb.FromTON(parts[1])
+			if err != nil {
+				pterm.Error.Println("incorrect amount format")
+				continue
+			}
+
+			addr, err := address.ParseAddr(parts[2])
+			if err != nil {
+				pterm.Error.Println("incorrect address format")
+				continue
+			}
+
+			pterm.Info.Println("withdrawing...")
+
+			tx, _, err := w.TransferWaitTransaction(context.Background(), addr, amt, "")
+			if err != nil {
+				pterm.Warning.Println(err.Error())
+				continue
+			}
+
+			pterm.Success.Println("withdrawal completed, tx:", base64.StdEncoding.EncodeToString(tx.Hash))
+		case "help":
+			pterm.Error.Println("Usage: withdraw [amount] [address to send]")
+			continue
+		}
+	}
 }
