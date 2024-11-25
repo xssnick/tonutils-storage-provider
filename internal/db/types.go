@@ -14,6 +14,7 @@ type CronContract struct {
 	ContractAddr string `json:"a"`
 	NextQuery    int64  `json:"t"`
 	Reward       string `json:"r"`
+	Version      int    `json:"v"`
 }
 
 var ErrNotFound = errors.New("not found")
