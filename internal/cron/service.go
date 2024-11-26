@@ -63,6 +63,8 @@ type DB interface {
 	DeleteCronContract(addr string) error
 	GetCronScannerLT() (uint64, error)
 	SetCronScannerLT(lt uint64) error
+	GetCronWalletScannerLT() (uint64, error)
+	SetCronWalletScannerLT(lt uint64) error
 }
 
 type NextTrigger struct {
@@ -88,6 +90,49 @@ func NewService(db DB, wallet *address.Address, api ton.APIClientWrapped, minRew
 	return &Service{wallet: wallet, db: db, api: api, minReward: minReward}
 }
 
+func (s *Service) StartWalletScanner(ctx context.Context) error {
+	lt, err := s.db.GetCronWalletScannerLT()
+	if err != nil {
+		if !errors.Is(err, db.ErrNotFound) {
+			return fmt.Errorf("failed to get wallet scanner lt: %w", err)
+		}
+		lt = 0
+	}
+
+	ch := make(chan *tlb.Transaction)
+	go s.api.SubscribeOnTransactions(ctx, s.wallet, lt, ch)
+
+	log.Info().Uint64("lt", lt).Msg("cron wallet scanner started")
+
+	for tx := range ch {
+		func() {
+			if tx.IO.In == nil || tx.IO.In.MsgType != tlb.MsgTypeInternal {
+				return
+			}
+
+			in := tx.IO.In.AsInternal()
+			body := in.Body.BeginParse()
+
+			op, err := body.LoadUInt(32)
+			if err != nil {
+				return
+			}
+
+			if op == 0x2e04891a {
+				log.Info().Str("amount", in.Amount.String()).Str("from", in.SrcAddr.String()).Msg("cron reward received")
+			}
+		}()
+
+		if err = s.db.SetCronWalletScannerLT(tx.LT); err != nil {
+			return fmt.Errorf("failed to set wallet scanner lt: %w", err)
+		}
+	}
+
+	log.Warn().Msg("cron wallet scanner stopped")
+
+	return nil
+}
+
 func (s *Service) StartScanner(ctx context.Context) error {
 	lt, err := s.db.GetCronScannerLT()
 	if err != nil {
@@ -100,7 +145,7 @@ func (s *Service) StartScanner(ctx context.Context) error {
 	ch := make(chan *tlb.Transaction)
 	go s.api.SubscribeOnTransactions(ctx, discoveryContract, lt, ch)
 
-	log.Info().Uint64("lt", lt).Msg("scanner started")
+	log.Info().Uint64("lt", lt).Msg("cron contracts discovery started")
 
 	for tx := range ch {
 		for {

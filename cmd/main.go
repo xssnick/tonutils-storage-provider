@@ -130,6 +130,12 @@ func main() {
 		}()
 
 		go func() {
+			if err := cSvc.StartWalletScanner(context.Background()); err != nil {
+				log.Fatal().Err(err).Msg("failed to start cron wallet scanner")
+			}
+		}()
+
+		go func() {
 			if err := cSvc.StartVerifier(context.Background()); err != nil {
 				log.Fatal().Err(err).Msg("failed to start cron verifier")
 			}

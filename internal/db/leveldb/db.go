@@ -126,3 +126,29 @@ func (d *DB) SetCronScannerLT(lt uint64) error {
 	}
 	return nil
 }
+
+func (d *DB) GetCronWalletScannerLT() (uint64, error) {
+	data, err := d.db.Get([]byte("cron_scanner_wallet_lt"), nil)
+	if err != nil {
+		if errors.Is(err, leveldb.ErrNotFound) {
+			return 0, db.ErrNotFound
+		}
+		return 0, err
+	}
+	var lt uint64
+	if err := json.Unmarshal(data, &lt); err != nil {
+		return 0, err
+	}
+	return lt, nil
+}
+
+func (d *DB) SetCronWalletScannerLT(lt uint64) error {
+	data, err := json.Marshal(lt)
+	if err != nil {
+		return err
+	}
+	if err = d.db.Put([]byte("cron_scanner_wallet_lt"), data, nil); err != nil {
+		return err
+	}
+	return nil
+}
