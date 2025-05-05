@@ -104,7 +104,7 @@ func (s *Server) updateDHT(ctx context.Context) error {
 		return fmt.Errorf("failed to store storage-provider record in dht: %w", err)
 	}
 
-	s.logger.Info().Int("nodes", stored).Msg("our address record updated")
+	s.logger.Debug().Int("nodes", stored).Msg("our address record updated")
 
 	return nil
 }
@@ -125,7 +125,7 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 		case transport.StorageRatesRequest:
 			ok, minSpan, maxSpan, av, rate := s.svc.GetStorageInfo(q.Size)
 
-			err := peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &transport.StorageRatesResponse{
+			err := peer.SendAnswer(ctx, query.MaxAnswerSize, query.Timeout, query.ID, transfer, &transport.StorageRatesResponse{
 				Available:        ok,
 				RatePerMBDay:     rate.Nano().Bytes(),
 				MinBounty:        tlb.MustFromTON("0.05").Nano().Bytes(),
@@ -169,7 +169,7 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 				}
 			}
 
-			if err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &resp); err != nil {
+			if err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.Timeout, query.ID, transfer, &resp); err != nil {
 				return err
 			}
 		case transport.StorageADNLProofRequest:
@@ -181,7 +181,7 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 				return err
 			}
 
-			err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.ID, transfer, &transport.StorageADNLProofResponse{
+			err = peer.SendAnswer(ctx, query.MaxAnswerSize, query.Timeout, query.ID, transfer, &transport.StorageADNLProofResponse{
 				StorageKey: key,
 				Signature:  sign,
 			})

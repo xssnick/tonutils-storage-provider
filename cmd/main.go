@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/adnl"
+	address2 "github.com/xssnick/tonutils-go/adnl/address"
 	"github.com/xssnick/tonutils-go/adnl/dht"
 	"github.com/xssnick/tonutils-go/liteclient"
 	"github.com/xssnick/tonutils-go/tlb"
@@ -26,6 +27,7 @@ import (
 	dlog "log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -148,8 +150,23 @@ func main() {
 		}()
 	}
 
+	_, portStr, err := net.SplitHostPort(cfg.ListenAddr)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to parse listen address")
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to parse port number")
+	}
+
 	gate := adnl.NewGateway(cfg.ADNLKey)
-	gate.SetExternalIP(ip)
+	gate.SetAddressList([]*address2.UDP{
+		{
+			IP:   ip,
+			Port: int32(port),
+		},
+	})
 
 	err = gate.StartServer(cfg.ListenAddr)
 	if err != nil {
