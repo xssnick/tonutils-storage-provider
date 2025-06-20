@@ -175,7 +175,7 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 		return nil, fmt.Errorf("failed to read db: %w", err)
 	}
 
-	log.Info().Str("addr", contractAddr.String()).Msg("verifying...")
+	log.Debug().Str("addr", contractAddr.String()).Msg("verifying...")
 
 	master, err := s.ton.CurrentMasterchainInfo(ctx)
 	if err != nil {
@@ -275,6 +275,8 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 	}); err != nil {
 		return nil, fmt.Errorf("failed to add to db: %w", err)
 	}
+
+	log.Debug().Str("addr", contractAddr.String()).Msg("contract added for storage")
 
 	go s.bagWorker(contractAddr)
 	return s.fetchStorageInfo(ctx, bag, byteToProof, contractAddr.String())

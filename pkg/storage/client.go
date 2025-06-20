@@ -17,6 +17,7 @@ import (
 type Client struct {
 	providerId  []byte
 	base        string
+	rootPath    string
 	client      http.Client
 	credentials *Credentials
 }
@@ -28,9 +29,10 @@ type Credentials struct {
 
 var ErrNotFound = errors.New("not found")
 
-func NewClient(base string, providerId []byte, credentials *Credentials) *Client {
+func NewClient(base, rootPath string, providerId []byte, credentials *Credentials) *Client {
 	return &Client{
-		base: base,
+		base:     base,
+		rootPath: rootPath,
 		client: http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -70,7 +72,7 @@ func (c *Client) StartDownload(ctx context.Context, bagId []byte, downloadAll bo
 	var res Result
 	if err := c.doRequest(ctx, "POST", "/api/v1/add", request{
 		BagID:       hex.EncodeToString(bagId),
-		Path:        "./provider",
+		Path:        c.rootPath,
 		DownloadAll: downloadAll,
 	}, &res); err != nil {
 		return fmt.Errorf("failed to do request: %w", err)

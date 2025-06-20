@@ -3,3 +3,5 @@ adb
 .idea
 build
 .DS_Store
+*.json
+db

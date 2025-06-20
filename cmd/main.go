@@ -226,7 +226,7 @@ func main() {
 
 	svc, err := service.NewService(
 		api,
-		storage.NewClient(stg.BaseURL, cfg.ProviderKey.Public().(ed25519.PublicKey), cred),
+		storage.NewClient(stg.BaseURL, cfg.BagsDirForStorage, cfg.ProviderKey.Public().(ed25519.PublicKey), cred),
 		db,
 		cfg.ProviderKey,
 		w,

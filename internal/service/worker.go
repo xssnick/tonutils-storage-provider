@@ -64,6 +64,10 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 				if usedByAnother == "" {
 					bd, err := s.storage.GetBag(ctx, bagId)
 					if err != nil {
+						if strings.HasSuffix(err.Error(), "not found") {
+							log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("bag already removed")
+							return nil
+						}
 						return fmt.Errorf("failed to get bag from storage: %w", err)
 					}
 
@@ -371,7 +375,7 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 			if contractAvailableBalance.Nano().Cmp(bounty) == -1 {
 				deadline := pi.LastProofAt.Unix() + 86400 + 43200
 
-				log.Info().Str("bag_balance", contractAvailableBalance.String()).
+				log.Debug().Str("bag_balance", contractAvailableBalance.String()).
 					Str("bounty", tlb.FromNanoTON(bounty).String()).
 					Uint64("byte", pi.ByteToProof).Hex("bag", bagId).
 					Int64("sec_till_drop", deadline-time.Now().Unix()).Hex("bag", bagId).
