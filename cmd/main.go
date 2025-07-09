@@ -232,7 +232,7 @@ func main() {
 		w,
 		tlb.MustFromTON(cfg.MinRatePerMBDay),
 		stg.SpaceToProvideMegabytes<<20, cfg.MaxBagSizeBytes,
-		cfg.MinSpan, cfg.MaxSpan,
+		cfg.MinSpan, cfg.MaxSpan, cfg.MaxMinutesNoDownloadProgress,
 	)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to init service")

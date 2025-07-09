@@ -286,13 +286,13 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 					}
 					log.Debug().Str("addr", contractAddr.String()).Hex("bag", bagId).Str("progress", fmt.Sprintf("%.2f", progress)).Msg("download is still in progress, will wait and check again")
 
-					if lastDownloadPercentUpdateAt.Before(time.Now().Add(-30 * time.Minute)) {
+					if lastDownloadPercentUpdateAt.Before(time.Now().Add(-time.Duration(s.maxMinutesNoProgress) * time.Minute)) {
 						log.Warn().Str("addr", contractAddr.String()).
 							Uint64("size", bag.BagSize).
 							Uint32("piece", bag.PieceSize).
 							Str("owner", ownerAddress.String()).
 							Hex("bag", bagId).
-							Msg("no download progress for > 30 minutes, dropping")
+							Msg("no download progress for too long, dropping")
 
 						drop()
 						continue

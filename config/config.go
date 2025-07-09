@@ -26,17 +26,18 @@ type CronConfig struct {
 }
 
 type Config struct {
-	ADNLKey           ed25519.PrivateKey
-	ProviderKey       ed25519.PrivateKey
-	BagsDirForStorage string
-	ListenAddr        string
-	ExternalIP        string
-	MinRatePerMBDay   string
-	MinSpan           uint32
-	MaxSpan           uint32
-	MaxBagSizeBytes   uint64
-	Storages          []StorageConfig
-	CRON              CronConfig
+	ADNLKey                      ed25519.PrivateKey
+	ProviderKey                  ed25519.PrivateKey
+	BagsDirForStorage            string
+	ListenAddr                   string
+	ExternalIP                   string
+	MinRatePerMBDay              string
+	MinSpan                      uint32
+	MaxSpan                      uint32
+	MaxBagSizeBytes              uint64
+	MaxMinutesNoDownloadProgress uint32
+	Storages                     []StorageConfig
+	CRON                         CronConfig
 }
 
 func checkIPAddress(ip string) string {
@@ -150,14 +151,15 @@ func LoadConfig(path string) (*Config, error) {
 		}
 
 		cfg := &Config{
-			ADNLKey:           private,
-			ProviderKey:       providerPrivate,
-			ListenAddr:        "0.0.0.0:18555",
-			BagsDirForStorage: "./provider",
-			MinRatePerMBDay:   "0.0001",
-			MinSpan:           600,
-			MaxSpan:           86400 * 2,
-			MaxBagSizeBytes:   4096 << 20,
+			ADNLKey:                      private,
+			ProviderKey:                  providerPrivate,
+			ListenAddr:                   "0.0.0.0:18555",
+			BagsDirForStorage:            "./provider",
+			MinRatePerMBDay:              "0.0001",
+			MinSpan:                      600,
+			MaxSpan:                      86400 * 2,
+			MaxBagSizeBytes:              4096 << 20,
+			MaxMinutesNoDownloadProgress: 30,
 			Storages: []StorageConfig{
 				{
 					BaseURL:                 "http://127.0.0.1:9955",
@@ -201,6 +203,11 @@ func LoadConfig(path string) (*Config, error) {
 
 		if cfg.MaxBagSizeBytes == 0 {
 			cfg.MaxBagSizeBytes = 4096 << 20
+			save = true
+		}
+
+		if cfg.MaxMinutesNoDownloadProgress == 0 {
+			cfg.MaxMinutesNoDownloadProgress = 30
 			save = true
 		}
 

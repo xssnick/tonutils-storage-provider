@@ -45,39 +45,41 @@ type Service struct {
 	storage Storage
 	db      DB
 
-	key            ed25519.PrivateKey
-	wallet         *wallet.Wallet
-	minRatePerMb   tlb.Coins
-	minSpan        uint32
-	maxSpan        uint32
-	spaceAllocated uint64
-	maxBagSize     uint64
-	globalCtx      context.Context
-	stop           func()
+	key                  ed25519.PrivateKey
+	wallet               *wallet.Wallet
+	minRatePerMb         tlb.Coins
+	minSpan              uint32
+	maxSpan              uint32
+	spaceAllocated       uint64
+	maxBagSize           uint64
+	maxMinutesNoProgress uint32
+	globalCtx            context.Context
+	stop                 func()
 
 	warns map[string]string
 
 	mx sync.RWMutex
 }
 
-func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.PrivateKey, w *wallet.Wallet, minRatePerMb tlb.Coins, spaceAllocated, maxBagSize uint64, minSpan, maxSpan uint32) (*Service, error) {
+func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.PrivateKey, w *wallet.Wallet, minRatePerMb tlb.Coins, spaceAllocated, maxBagSize uint64, minSpan, maxSpan, maxMinutesNoProgress uint32) (*Service, error) {
 	w.GetSpec().(*wallet.SpecV3).SetMessagesTTL(120)
 
 	globalCtx, stop := context.WithCancel(context.Background())
 	s := &Service{
-		key:            key,
-		ton:            ton,
-		storage:        storage,
-		db:             xdb,
-		wallet:         w,
-		minRatePerMb:   minRatePerMb,
-		minSpan:        minSpan,
-		maxSpan:        maxSpan,
-		maxBagSize:     maxBagSize,
-		spaceAllocated: spaceAllocated,
-		globalCtx:      globalCtx,
-		stop:           stop,
-		warns:          map[string]string{},
+		maxMinutesNoProgress: maxMinutesNoProgress,
+		key:                  key,
+		ton:                  ton,
+		storage:              storage,
+		db:                   xdb,
+		wallet:               w,
+		minRatePerMb:         minRatePerMb,
+		minSpan:              minSpan,
+		maxSpan:              maxSpan,
+		maxBagSize:           maxBagSize,
+		spaceAllocated:       spaceAllocated,
+		globalCtx:            globalCtx,
+		stop:                 stop,
+		warns:                map[string]string{},
 	}
 
 	bags, err := s.db.ListContracts()
