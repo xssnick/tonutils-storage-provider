@@ -89,7 +89,7 @@ func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.P
 
 	for _, bag := range bags {
 		if bag.Status != db.StoredBagStatusStopped {
-			go s.bagWorker(address.MustParseAddr(bag.ContractAddr))
+			go s.bagWorker(address.MustParseAddr(bag.ContractAddr), bag.ContractInfo)
 		}
 	}
 
@@ -271,16 +271,22 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 		return nil, fmt.Errorf("failed to read db: %w", err)
 	}
 
+	info := &db.ContractInfo{
+		MaxSpan: pi.MaxSpan,
+		PerMB:   pi.RatePerMB.Nano().String(),
+	}
+
 	if err = s.db.SetContract(db.StoredBag{
 		ContractAddr: contractAddr.String(),
 		Status:       db.StoredBagStatusAdded,
+		ContractInfo: info,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to add to db: %w", err)
 	}
 
 	log.Debug().Str("addr", contractAddr.String()).Msg("contract added for storage")
 
-	go s.bagWorker(contractAddr)
+	go s.bagWorker(contractAddr, info)
 	return s.fetchStorageInfo(ctx, bag, byteToProof, contractAddr.String())
 }
 

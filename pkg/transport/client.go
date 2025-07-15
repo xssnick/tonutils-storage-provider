@@ -9,6 +9,7 @@ import (
 	"github.com/xssnick/tonutils-go/adnl"
 	"github.com/xssnick/tonutils-go/adnl/address"
 	"github.com/xssnick/tonutils-go/adnl/dht"
+	"github.com/xssnick/tonutils-go/adnl/keys"
 	"github.com/xssnick/tonutils-go/adnl/rldp"
 	"github.com/xssnick/tonutils-go/tl"
 	"sync"
@@ -56,7 +57,7 @@ func (c *Client) connect(ctx context.Context, providerKey []byte) (*providerPeer
 		return p, nil
 	}
 
-	channelKeyId, err := tl.Hash(adnl.PublicKeyED25519{Key: providerKey})
+	channelKeyId, err := tl.Hash(keys.PublicKeyED25519{Key: providerKey})
 	if err != nil {
 		return nil, fmt.Errorf("failed to calc hash of provider key %s: %w", hex.EncodeToString(providerKey), err)
 	}
@@ -164,7 +165,7 @@ func (c *Client) VerifyStorageADNLProof(ctx context.Context, provider []byte, co
 		return nil, fmt.Errorf("failed to verify provider adnl, invalid result")
 	}
 
-	adnlId, err := tl.Hash(adnl.PublicKeyED25519{Key: res.StorageKey})
+	adnlId, err := tl.Hash(keys.PublicKeyED25519{Key: res.StorageKey})
 	if err != nil {
 		return nil, fmt.Errorf("failed to calc hash of storage key %s: %w", hex.EncodeToString(res.StorageKey), err)
 	}

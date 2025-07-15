@@ -8,6 +8,12 @@ type StoredBag struct {
 	Size         uint64          `json:"s"`
 	ContractAddr string          `json:"a"`
 	Status       StoredBagStatus `json:"t"`
+	ContractInfo *ContractInfo   `json:"i"`
+}
+
+type ContractInfo struct {
+	MaxSpan uint32 `json:"ms"`
+	PerMB   string `json:"p"`
 }
 
 type CronContract struct {

@@ -10,6 +10,7 @@ import (
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/adnl"
 	"github.com/xssnick/tonutils-go/adnl/dht"
+	"github.com/xssnick/tonutils-go/adnl/keys"
 	"github.com/xssnick/tonutils-go/adnl/rldp"
 	"github.com/xssnick/tonutils-go/tl"
 	"github.com/xssnick/tonutils-go/tlb"
@@ -89,7 +90,7 @@ func (s *Server) updateDHT(ctx context.Context) error {
 		return fmt.Errorf("failed to store address: %w", err)
 	}
 
-	pID := adnl.PublicKeyED25519{Key: s.providerKey.Public().(ed25519.PublicKey)}
+	pID := keys.PublicKeyED25519{Key: s.providerKey.Public().(ed25519.PublicKey)}
 	data, err := tl.Serialize(transport.ProviderDHTRecord{
 		ADNLAddr: id,
 	}, true)

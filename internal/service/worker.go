@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-func (s *Service) bagWorker(contractAddr *address.Address) {
+func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo) {
 	var torrentSize uint64
 	var pieceSize uint32
 	var torrentMerkle = make([]byte, 32)
@@ -170,7 +170,7 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 				return nil
 			}()
 			if err != nil {
-				log.Error().Err(err).Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("failed to fetch storage contract info, will be retried in 5s")
+				log.Error().Err(err).Str("addr", contractAddr.String()).Msg("failed to fetch storage contract info, will be retried in 5s")
 				wait = 5 * time.Second
 				continue
 			}
@@ -268,6 +268,7 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 						Size:         bag.BagSize,
 						ContractAddr: contractAddr.String(),
 						Status:       db.StoredBagStatusActive,
+						ContractInfo: info,
 					}); err != nil {
 						log.Error().Err(err).Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("failed to set contract to db, will be retried in 5s")
 						wait = 5 * time.Second
@@ -340,24 +341,42 @@ func (s *Service) bagWorker(contractAddr *address.Address) {
 				return fmt.Errorf("failed to get provider info: %w", err)
 			}
 
-			if pi.MaxSpan < s.minSpan {
-				log.Warn().Str("addr", contractAddr.String()).Uint32("span", pi.MaxSpan).Hex("bag", bagId).Msg("too short span, dropping storage")
+			if info == nil || (pi.MaxSpan != info.MaxSpan || pi.RatePerMB.Nano().String() != info.PerMB) {
+				if pi.MaxSpan < s.minSpan {
+					log.Warn().Str("addr", contractAddr.String()).Uint32("span", pi.MaxSpan).Hex("bag", bagId).Msg("too short span, dropping storage")
 
-				drop()
-				return nil
-			}
-			if pi.MaxSpan > s.maxSpan {
-				log.Warn().Str("addr", contractAddr.String()).Uint32("span", pi.MaxSpan).Hex("bag", bagId).Msg("too short long, dropping storage")
+					drop()
+					return nil
+				}
 
-				drop()
-				return nil
-			}
+				if pi.MaxSpan > s.maxSpan {
+					log.Warn().Str("addr", contractAddr.String()).Uint32("span", pi.MaxSpan).Hex("bag", bagId).Msg("too short long, dropping storage")
 
-			if pi.RatePerMB.Nano().Cmp(s.minRatePerMb.Nano()) < 0 {
-				log.Warn().Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("too low rate per mb in contract, declining storage")
+					drop()
+					return nil
+				}
 
-				drop()
-				return nil
+				if pi.RatePerMB.Nano().Cmp(s.minRatePerMb.Nano()) < 0 {
+					log.Warn().Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("too low rate per mb in contract, declining storage")
+
+					drop()
+					return nil
+				}
+
+				info = &db.ContractInfo{
+					MaxSpan: pi.MaxSpan,
+					PerMB:   pi.RatePerMB.Nano().String(),
+				}
+
+				if err = s.db.SetContract(db.StoredBag{
+					BagID:        bagId,
+					Size:         torrentSize,
+					ContractAddr: contractAddr.String(),
+					Status:       db.StoredBagStatusActive,
+					ContractInfo: info,
+				}); err != nil {
+					log.Error().Err(err).Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("failed to update contract to db, will be retried in 5s")
+				}
 			}
 
 			mul := new(big.Int).Mul(pi.RatePerMB.Nano(), new(big.Int).SetUint64(torrentSize))
