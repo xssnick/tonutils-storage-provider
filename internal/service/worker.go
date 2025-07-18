@@ -72,8 +72,8 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 					}
 
 					if strings.HasSuffix(bd.Path, "/provider/"+hex.EncodeToString(bagId)) {
-						// delete only what was added by provider
-						if err := s.storage.RemoveBag(ctx, bagId, false); err != nil {
+						// delete only what provider added
+						if err := s.storage.RemoveBag(ctx, bagId, true); err != nil {
 							return fmt.Errorf("failed to remove bag from storage: %w", err)
 						}
 
