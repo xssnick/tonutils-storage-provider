@@ -28,6 +28,8 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 	var bagId = make([]byte, 32)
 	contractFetched, verified, downloaded := false, false, false
 
+	startedAt := time.Now()
+
 	stopCtx, stop := context.WithCancel(s.globalCtx)
 	defer stop()
 
@@ -391,8 +393,14 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 				return nil
 			}
 
-			if contractAvailableBalance.Nano().Cmp(bounty) == -1 {
-				deadline := pi.LastProofAt.Unix() + 86400 + 43200
+			if contractAvailableBalance.Nano().Cmp(bounty) < 0 {
+				var deadline int64
+				fresh := pi.LastProofAt.Unix() <= 0
+				if fresh {
+					deadline = startedAt.Unix() + 3600
+				} else {
+					deadline = pi.LastProofAt.Unix() + int64(pi.MaxSpan) + 3600
+				}
 
 				log.Debug().Str("bag_balance", contractAvailableBalance.String()).
 					Str("bounty", tlb.FromNanoTON(bounty).String()).
