@@ -107,7 +107,11 @@ func main() {
 		}
 
 		adnlAddrs = append(adnlAddrs, adnlAddr)
-	} else if *providerPubHex != "" {
+	}
+
+	if *providerPubHex != "" {
+		adnlAddrs = nil
+
 		if len(*providerPubHex) != 64 {
 			log.Fatal().Msg("provider key must be 32 bytes hex string, use -provider flag")
 			return
@@ -151,30 +155,32 @@ func main() {
 			return
 		}
 
-		nodesList, _, err := cli.FindOverlayNodes(context.Background(), bag)
-		if err != nil && !errors.Is(err, dht.ErrDHTValueIsNotFound) {
-			log.Fatal().Err(err).Msg("failed to find bag overlay nodes")
-			return
-		}
-
-		if nodesList == nil {
-			log.Warn().Msg("no peers found for bag in DHT")
-			return
-		}
-
-		for _, node := range nodesList.List {
-			key, ok := node.ID.(keys.PublicKeyED25519)
-			if !ok {
-				continue
-			}
-
-			adnlID, err := tl.Hash(key)
-			if err != nil {
-				log.Fatal().Err(err).Msg("hash tl key error")
+		if len(adnlAddrs) == 0 {
+			nodesList, _, err := cli.FindOverlayNodes(context.Background(), bag)
+			if err != nil && !errors.Is(err, dht.ErrDHTValueIsNotFound) {
+				log.Fatal().Err(err).Msg("failed to find bag overlay nodes")
 				return
 			}
 
-			adnlAddrs = append(adnlAddrs, adnlID)
+			if nodesList == nil {
+				log.Warn().Msg("no peers found for bag in DHT")
+				return
+			}
+
+			for _, node := range nodesList.List {
+				key, ok := node.ID.(keys.PublicKeyED25519)
+				if !ok {
+					continue
+				}
+
+				adnlID, err := tl.Hash(key)
+				if err != nil {
+					log.Fatal().Err(err).Msg("hash tl key error")
+					return
+				}
+
+				adnlAddrs = append(adnlAddrs, adnlID)
+			}
 		}
 	}
 
@@ -241,7 +247,9 @@ func adnlCheck(cli *dht.Client, gw *adnl.Gateway, adnlAddr []byte, bag []byte) {
 
 			tm := time.Now()
 			var pong Pong
-			err = peer.Query(context.Background(), overlay.WrapQuery(over, &Ping{SessionID: rand.Int63()}), &pong)
+			reqCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			err = peer.Query(reqCtx, overlay.WrapQuery(over, &Ping{SessionID: rand.Int63()}), &pong)
+			cancel()
 			if err != nil {
 				log.Warn().Err(err).Msg("failed to ping bag")
 				continue
@@ -251,7 +259,7 @@ func adnlCheck(cli *dht.Client, gw *adnl.Gateway, adnlAddr []byte, bag []byte) {
 			log.Info().Msg("Trying to get bag info from peer...")
 
 			var res TorrentInfoContainer
-			reqCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			reqCtx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
 			err = rl.DoQuery(reqCtx, 32<<20, overlay.WrapQuery(over, &GetTorrentInfo{}), &res)
 			cancel()
 			if err != nil {
