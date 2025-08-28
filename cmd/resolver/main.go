@@ -65,6 +65,7 @@ type TorrentInfo struct {
 var adnlAddrHex = flag.String("adnl", "", "adnl address")
 var providerPubHex = flag.String("provider", "", "provider pub key")
 var bagHex = flag.String("bag", "", "bag id")
+var piece = flag.Int("piece", 0, "piece id")
 
 func main() {
 	flag.Parse()
@@ -95,6 +96,19 @@ func main() {
 	var bag []byte
 	var adnlAddrs [][]byte
 	var providerKey []byte
+	if *bagHex != "" {
+		if len(*bagHex) != 64 {
+			log.Fatal().Msg("bag id must be 32 bytes hex string")
+			return
+		}
+
+		bag, err = hex.DecodeString(*bagHex)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to decode bag id")
+			return
+		}
+	}
+
 	if *adnlAddrHex != "" {
 		if len(*adnlAddrHex) != 64 {
 			log.Fatal().Msg("adnl address must be 32 bytes hex string, use -adnl flag")
@@ -144,17 +158,6 @@ func main() {
 		log.Info().Msgf("Found provider adnl: %s", hex.EncodeToString(nodeAddr.ADNLAddr))
 		adnlAddrs = append(adnlAddrs, nodeAddr.ADNLAddr)
 	} else if *bagHex != "" {
-		if len(*bagHex) != 64 {
-			log.Fatal().Msg("bag id must be 32 bytes hex string")
-			return
-		}
-
-		bag, err = hex.DecodeString(*bagHex)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to decode bag id")
-			return
-		}
-
 		if len(adnlAddrs) == 0 {
 			nodesList, _, err := cli.FindOverlayNodes(context.Background(), bag)
 			if err != nil && !errors.Is(err, dht.ErrDHTValueIsNotFound) {
@@ -192,13 +195,13 @@ func main() {
 	for i, addr := range adnlAddrs {
 		println()
 		log.Info().Msgf("Checking ADNL %d of %d", i+1, len(adnlAddrs))
-		adnlCheck(cli, gw, addr, bag)
+		adnlCheck(cli, gw, addr, bag, int32(*piece))
 	}
 
 	log.Info().Msg("Done")
 }
 
-func adnlCheck(cli *dht.Client, gw *adnl.Gateway, adnlAddr []byte, bag []byte) {
+func adnlCheck(cli *dht.Client, gw *adnl.Gateway, adnlAddr []byte, bag []byte, pieceId int32) {
 	log.Info().Msgf("Searching for ip addresses of %s ADNL in DHT...", hex.EncodeToString(adnlAddr))
 	addrList, pubKey, err := cli.FindAddresses(context.Background(), adnlAddr)
 	if err != nil {
@@ -290,21 +293,21 @@ func adnlCheck(cli *dht.Client, gw *adnl.Gateway, adnlAddr []byte, bag []byte) {
 			log.Info().Msgf("	Bag size: %d", info.FileSize)
 			log.Info().Msgf("	Header size: %d", info.HeaderSize)
 			log.Info().Msgf("	Description: %s", info.Description.Value)
-			log.Info().Msgf("Trying to get piece 0...")
+			log.Info().Msgf("Trying to get piece %d...", pieceId)
 
 			time.Sleep(1 * time.Second)
 
 			tm = time.Now()
 			var piece Piece
 			reqCtx, cancel = context.WithTimeout(context.Background(), 15*time.Second)
-			err = rl.DoQuery(reqCtx, 32<<20, overlay.WrapQuery(over, &GetPiece{int32(0)}), &piece)
+			err = rl.DoQuery(reqCtx, 32<<20, overlay.WrapQuery(over, &GetPiece{pieceId}), &piece)
 			cancel()
 			if err != nil {
-				log.Warn().Err(err).Msg("Piece 0 is not downloaded, error")
+				log.Warn().Err(err).Msgf("Piece %d is not downloaded, error", pieceId)
 				continue
 			}
 
-			log.Info().Msgf("Piece 0 is downloaded in %s", time.Since(tm).String())
+			log.Info().Msgf("Piece %d is downloaded in %s", pieceId, time.Since(tm).String())
 		}
 	}
 }
