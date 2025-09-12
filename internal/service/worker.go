@@ -469,15 +469,9 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 					log.Debug().Str("wallet_balance", wBalance.String()).Str("bounty_before_fee", tlb.FromNanoTON(bounty).String()).Int64("sec_till_proof", (pi.LastProofAt.Unix()+int64(pi.MaxSpan))-int64(block.BlockInfo.GenUtime)).Uint64("byte", pi.ByteToProof).Hex("bag", bagId).Str("addr", contractAddr.String()).Msg("too early to proof, waiting...")
 				}
 
-				wait = 1 * time.Minute
-
-				// wait till proof or 5 min (min of this two)
+				// wait till proof or 6 sec (max of this two)
 				tillProof := time.Duration((pi.LastProofAt.Unix()+int64(pi.MaxSpan))-time.Now().Unix()) * time.Second
-				if tillProof <= 3*time.Second {
-					wait = 3 * time.Second
-				} else if tillProof < wait {
-					wait = tillProof
-				}
+				wait = max(tillProof, 6*time.Second)
 			} else {
 				wait = 15 * time.Second
 			}
