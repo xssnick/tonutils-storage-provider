@@ -56,7 +56,8 @@ type Service struct {
 	globalCtx            context.Context
 	stop                 func()
 
-	warns map[string]string
+	warns   map[string]string
+	txQueue *TxQueue
 
 	mx sync.RWMutex
 }
@@ -65,7 +66,7 @@ func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.P
 	w.GetSpec().(*wallet.SpecV3).SetMessagesTTL(120)
 
 	globalCtx, stop := context.WithCancel(context.Background())
-	s := &Service{
+ s := &Service{
 		maxMinutesNoProgress: maxMinutesNoProgress,
 		key:                  key,
 		ton:                  ton,
@@ -81,6 +82,9 @@ func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.P
 		stop:                 stop,
 		warns:                map[string]string{},
 	}
+
+	// initialize single-threaded tx queue for wallet operations
+	s.txQueue = NewTxQueue(globalCtx, w)
 
 	bags, err := s.db.ListContracts()
 	if err != nil {

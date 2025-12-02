@@ -112,7 +112,7 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to add liteserver connections from ton config")
 	}
 
-	api := ton.NewAPIClient(lc).WithRetry(2)
+	api := ton.NewAPIClient(lc).WithRetry(2).WithLSInfoInErrors()
 	w, err := wallet.FromPrivateKey(api, cfg.ProviderKey, wallet.V3R2)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load wallet")

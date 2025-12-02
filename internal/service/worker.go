@@ -457,12 +457,12 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 
 					log.Info().Str("bounty_before_fee", tlb.FromNanoTON(bounty).String()).Str("wallet_balance", wBalance.String()).Str("bag_balance", contractAvailableBalance.String()).Uint64("byte", pi.ByteToProof).Hex("bag", bagId).Str("addr", contractAddr.String()).Msg("sending proof to storage contract...")
 
-					tx, _, err := s.wallet.SendWaitTransaction(ctx, wallet.SimpleMessage(contractAddr, tlb.MustFromTON("0.05"), payload))
+					hash, err := s.txQueue.SendWait(ctx, wallet.SimpleMessage(contractAddr, tlb.MustFromTON("0.05"), payload))
 					if err != nil {
 						return fmt.Errorf("failed to send piece proof: %w", err)
 					}
 
-					log.Info().Hex("tx_hash", tx.Hash).Str("wallet_balance", wBalance.String()).Str("bounty_before_fee", tlb.FromNanoTON(bounty).String()).Uint64("byte", pi.ByteToProof).Hex("bag", bagId).Str("addr", contractAddr.String()).Msg("proof transaction sent to storage contract")
+					log.Info().Hex("tx_hash", hash).Str("wallet_balance", wBalance.String()).Str("bounty_before_fee", tlb.FromNanoTON(bounty).String()).Uint64("byte", pi.ByteToProof).Hex("bag", bagId).Str("addr", contractAddr.String()).Msg("proof transaction sent to storage contract")
 
 					return nil
 				} else {
