@@ -59,38 +59,54 @@ func (s *Service) StartWalletScanner(ctx context.Context) error {
 		lt = 0
 	}
 
-	ch := make(chan *tlb.Transaction)
-	go s.api.SubscribeOnTransactions(ctx, s.wallet, lt, ch)
+	for {
+		ch := make(chan *tlb.Transaction)
+		go s.api.SubscribeOnTransactions(ctx, s.wallet, lt, ch)
 
-	log.Info().Uint64("lt", lt).Msg("cron wallet scanner started")
+		log.Info().Uint64("lt", lt).Msg("cron wallet scanner started")
 
-	for tx := range ch {
-		func() {
-			if tx.IO.In == nil || tx.IO.In.MsgType != tlb.MsgTypeInternal {
-				return
+		for tx := range ch {
+			func() {
+				if tx.IO.In == nil || tx.IO.In.MsgType != tlb.MsgTypeInternal {
+					return
+				}
+
+				in := tx.IO.In.AsInternal()
+				body := in.Body.BeginParse()
+
+				op, err := body.LoadUInt(32)
+				if err != nil {
+					return
+				}
+
+				if op == 0x2e04891a {
+					log.Info().Str("amount", in.Amount.String()).Str("from", in.SrcAddr.String()).Msg("cron reward received")
+				}
+			}()
+
+			if err = s.db.SetCronWalletScannerLT(tx.LT); err != nil {
+				log.Error().Err(err).Msg("failed to set cron scanner lt")
+				continue
 			}
+			lt = tx.LT
+		}
 
-			in := tx.IO.In.AsInternal()
-			body := in.Body.BeginParse()
+		select {
+		case <-ctx.Done():
+			log.Warn().Msg("cron wallet scanner stopped")
+			return ctx.Err()
+		default:
+		}
 
-			op, err := body.LoadUInt(32)
-			if err != nil {
-				return
-			}
+		log.Info().Uint64("lt", lt).Msg("cron wallet scanner failed, will restart in 3 seconds")
 
-			if op == 0x2e04891a {
-				log.Info().Str("amount", in.Amount.String()).Str("from", in.SrcAddr.String()).Msg("cron reward received")
-			}
-		}()
-
-		if err = s.db.SetCronWalletScannerLT(tx.LT); err != nil {
-			return fmt.Errorf("failed to set wallet scanner lt: %w", err)
+		select {
+		case <-ctx.Done():
+			log.Warn().Msg("cron wallet scanner stopped")
+			return ctx.Err()
+		case <-time.After(time.Second * 3):
 		}
 	}
-
-	log.Warn().Msg("cron wallet scanner stopped")
-
-	return nil
 }
 
 func (s *Service) StartScanner(ctx context.Context) error {
