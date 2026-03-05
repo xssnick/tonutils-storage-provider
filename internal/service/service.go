@@ -97,6 +97,8 @@ func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.P
 		}
 	}
 
+	go s.scanWalletTransactionsOnStartup(globalCtx, s)
+
 	return s, nil
 }
 

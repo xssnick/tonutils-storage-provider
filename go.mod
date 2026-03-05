@@ -8,7 +8,7 @@ require (
 	github.com/pterm/pterm v0.12.81
 	github.com/rs/zerolog v1.34.0
 	github.com/syndtr/goleveldb v1.0.0
-	github.com/xssnick/tonutils-go v1.15.4-0.20251203102642-124ac120fe14
+	github.com/xssnick/tonutils-go v1.16.0
 )
 
 require (
