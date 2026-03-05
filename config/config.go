@@ -36,6 +36,7 @@ type Config struct {
 	MaxSpan                      uint32
 	MaxBagSizeBytes              uint64
 	MaxMinutesNoDownloadProgress uint32
+	StartupWalletScanLastLT      uint64
 	Storages                     []StorageConfig
 	CRON                         CronConfig
 }

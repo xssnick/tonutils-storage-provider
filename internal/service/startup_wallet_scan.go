@@ -24,35 +24,12 @@ type storageInfoFetcher interface {
 
 type listTransactionsFn func(ctx context.Context, addr *address.Address, num uint32, lt uint64, txHash []byte) ([]*tlb.Transaction, error)
 
-func (s *Service) scanWalletTransactionsOnStartup(ctx context.Context, fetcher storageInfoFetcher) {
-	if s == nil || s.ton == nil || s.wallet == nil || fetcher == nil {
+func (s *Service) StartWalletStartupScan(ctx context.Context, scanAPI ton.APIClientWrapped, startLT uint64, startHash []byte, stopLT uint64) {
+	if s == nil || s.wallet == nil || scanAPI == nil {
 		return
 	}
 
-	master, err := s.ton.CurrentMasterchainInfo(ctx)
-	if err != nil {
-		log.Debug().Err(err).Msg("failed to get masterchain info for startup wallet scan")
-		return
-	}
-
-	acc, err := s.ton.WaitForBlock(master.SeqNo).GetAccount(ctx, master, s.wallet.WalletAddress())
-	if err != nil {
-		log.Debug().Err(err).Msg("failed to get wallet account for startup wallet scan")
-		return
-	}
-
-	if acc == nil || !acc.IsActive || acc.LastTxLT == 0 || len(acc.LastTxHash) == 0 {
-		return
-	}
-
-	scanWalletTransactions(
-		ctx,
-		s.wallet.WalletAddress(),
-		acc.LastTxLT,
-		acc.LastTxHash,
-		s.ton.ListTransactions,
-		fetcher,
-	)
+	go scanWalletTransactions(ctx, s.wallet.WalletAddress(), startLT, startHash, stopLT, scanAPI.ListTransactions, s)
 }
 
 func scanWalletTransactions(
@@ -60,6 +37,7 @@ func scanWalletTransactions(
 	walletAddr *address.Address,
 	startLT uint64,
 	startHash []byte,
+	stopLT uint64,
 	listFn listTransactionsFn,
 	fetcher storageInfoFetcher,
 ) {
@@ -72,8 +50,17 @@ func scanWalletTransactions(
 	hash := append([]byte(nil), startHash...)
 
 	num := 0
-	log.Info().Str("addr", walletAddr.String()).Uint64("lt", lt).Msg("scanning wallet transactions")
-	defer log.Info().Str("addr", walletAddr.String()).Uint64("lt", lt).Int("tx_count", num).Msg("wallet transactions scan finished")
+	log.Info().
+		Str("addr", walletAddr.String()).
+		Uint64("from_lt", startLT).
+		Uint64("stop_lt", stopLT).
+		Msg("scanning wallet transactions")
+	defer log.Info().
+		Str("addr", walletAddr.String()).
+		Uint64("last_cursor_lt", lt).
+		Uint64("stop_lt", stopLT).
+		Int("tx_count", num).
+		Msg("wallet transactions scan finished")
 
 	for {
 		txs, err := listFn(ctx, walletAddr, startupWalletScanBatchSize, lt, hash)
@@ -89,7 +76,15 @@ func scanWalletTransactions(
 			return
 		}
 
-		for _, tx := range txs {
+		for i := len(txs) - 1; i >= 0; i-- {
+			tx := txs[i]
+			if tx == nil {
+				continue
+			}
+			if stopLT > 0 && tx.LT <= stopLT {
+				return
+			}
+
 			processStartupWalletScanTx(ctx, tx, seen, fetcher)
 			num++
 		}

@@ -101,7 +101,7 @@ func TestScanWalletTransactions_FiltersOpcodeDedupsSendersAndCallsFetchStorageIn
 	}
 
 	fetcher := &startupFetchStorageInfoStub{t: t}
-	scanWalletTransactions(context.Background(), walletAddr, startLT, startHash, listFn, fetcher)
+	scanWalletTransactions(context.Background(), walletAddr, startLT, startHash, 0, listFn, fetcher)
 
 	if listCalls != 3 {
 		t.Fatalf("expected 3 list calls, got %d", listCalls)
