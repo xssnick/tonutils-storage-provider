@@ -375,7 +375,7 @@ func buildArchiveTransactionsAPI(lsCfg *liteclient.GlobalConfig) (ton.APIClientW
 		}
 
 		api := ton.NewAPIClient(pool).WithRetry(0).WithLSInfoInErrors()
-		if isArchiveLiteserver(api) {
+		if isArchiveLiteserver(api, addr) {
 			return api, addr, nil
 		}
 
@@ -388,13 +388,13 @@ func buildArchiveTransactionsAPI(lsCfg *liteclient.GlobalConfig) (ton.APIClientW
 	return nil, "", fmt.Errorf("archive liteserver was not found")
 }
 
-func isArchiveLiteserver(api ton.APIClientWrapped) bool {
+func isArchiveLiteserver(api ton.APIClientWrapped, addr string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
 	master, err := api.GetMasterchainInfo(ctx)
 	if err != nil {
-		log.Debug().Err(err).Msg("failed to master block")
+		log.Debug().Err(err).Str("addr", addr).Msg("failed to master block")
 		return false
 	}
 
@@ -403,7 +403,7 @@ func isArchiveLiteserver(api ton.APIClientWrapped) bool {
 
 	_, err = api.LookupBlock(lookupCtx, master.Workchain, master.Shard, startupWalletArchiveProbeSeqno)
 	if err != nil {
-		log.Debug().Err(err).Uint32("seqno", startupWalletArchiveProbeSeqno).Msg("failed to lookup startup wallet archive probe block")
+		log.Debug().Err(err).Str("addr", addr).Uint32("seqno", startupWalletArchiveProbeSeqno).Msg("failed to lookup startup wallet archive probe block")
 		return false
 	}
 	return true
