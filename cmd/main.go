@@ -394,6 +394,7 @@ func isArchiveLiteserver(api ton.APIClientWrapped) bool {
 
 	master, err := api.GetMasterchainInfo(ctx)
 	if err != nil {
+		log.Debug().Err(err).Msg("failed to master block")
 		return false
 	}
 
@@ -401,7 +402,11 @@ func isArchiveLiteserver(api ton.APIClientWrapped) bool {
 	defer lookupCancel()
 
 	_, err = api.LookupBlock(lookupCtx, master.Workchain, master.Shard, startupWalletArchiveProbeSeqno)
-	return err == nil
+	if err != nil {
+		log.Debug().Err(err).Uint32("seqno", startupWalletArchiveProbeSeqno).Msg("failed to lookup startup wallet archive probe block")
+		return false
+	}
+	return true
 }
 
 func liteserverIP(ip int64) string {
