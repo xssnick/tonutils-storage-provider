@@ -24,12 +24,19 @@ type storageInfoFetcher interface {
 
 type listTransactionsFn func(ctx context.Context, addr *address.Address, num uint32, lt uint64, txHash []byte) ([]*tlb.Transaction, error)
 
-func (s *Service) StartWalletStartupScan(ctx context.Context, scanAPI ton.APIClientWrapped, startLT uint64, startHash []byte, stopLT uint64) {
+func (s *Service) StartWalletStartupScan(ctx context.Context, scanAPI ton.APIClientWrapped, startLT uint64, startHash []byte, stopLT uint64) <-chan error {
+	done := make(chan error, 1)
 	if s == nil || s.wallet == nil || scanAPI == nil {
-		return
+		done <- nil
+		close(done)
+		return done
 	}
 
-	go scanWalletTransactions(ctx, s.wallet.WalletAddress(), startLT, startHash, stopLT, scanAPI.ListTransactions, s)
+	go func() {
+		done <- scanWalletTransactions(ctx, s.wallet.WalletAddress(), startLT, startHash, stopLT, scanAPI.ListTransactions, s)
+		close(done)
+	}()
+	return done
 }
 
 func scanWalletTransactions(
@@ -40,9 +47,9 @@ func scanWalletTransactions(
 	stopLT uint64,
 	listFn listTransactionsFn,
 	fetcher storageInfoFetcher,
-) {
+) error {
 	if walletAddr == nil || startLT == 0 || len(startHash) == 0 || listFn == nil || fetcher == nil {
-		return
+		return nil
 	}
 
 	seen := map[string]struct{}{}
@@ -66,14 +73,14 @@ func scanWalletTransactions(
 		txs, err := listFn(ctx, walletAddr, startupWalletScanBatchSize, lt, hash)
 		if err != nil {
 			if errors.Is(err, ton.ErrNoTransactionsWereFound) {
-				return
+				return nil
 			}
 			log.Warn().Err(err).Uint64("lt", lt).Msg("failed to list wallet transactions during startup scan")
-			return
+			return err
 		}
 
 		if len(txs) == 0 {
-			return
+			return nil
 		}
 
 		for i := len(txs) - 1; i >= 0; i-- {
@@ -82,7 +89,7 @@ func scanWalletTransactions(
 				continue
 			}
 			if stopLT > 0 && tx.LT <= stopLT {
-				return
+				return nil
 			}
 
 			processStartupWalletScanTx(ctx, tx, seen, fetcher)
@@ -91,7 +98,7 @@ func scanWalletTransactions(
 
 		oldest := txs[0]
 		if oldest == nil || oldest.PrevTxLT == 0 || len(oldest.PrevTxHash) == 0 {
-			return
+			return nil
 		}
 
 		lt = oldest.PrevTxLT

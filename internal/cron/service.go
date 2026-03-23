@@ -118,117 +118,134 @@ func (s *Service) StartScanner(ctx context.Context) error {
 		lt = 0
 	}
 
-	ch := make(chan *tlb.Transaction)
-	go s.api.SubscribeOnTransactions(ctx, contract.DiscoveryAddr, lt, ch)
+	for {
+		ch := make(chan *tlb.Transaction)
+		go s.api.SubscribeOnTransactions(ctx, contract.DiscoveryAddr, lt, ch)
 
-	log.Info().Uint64("lt", lt).Msg("cron contracts discovery started")
+		log.Info().Uint64("lt", lt).Msg("cron contracts discovery started")
 
-	for tx := range ch {
-		for {
-			err = func() error {
-				if tx.IO.In == nil || tx.IO.In.MsgType != tlb.MsgTypeInternal {
-					return nil
-				}
-
-				log.Debug().Uint64("lt", tx.LT).Msg("new tx on discovery contract")
-
-				in := tx.IO.In.AsInternal()
-				body := in.Body.BeginParse()
-
-				op, err := body.LoadUInt(32)
-				if err != nil {
-					log.Debug().Err(err).Uint64("lt", tx.LT).Msg("failed to load tx in msg op")
-					return nil
-				}
-
-				switch op {
-				case 0xd027efe5: // op::cron_notify
-					dataHash, err := body.LoadSlice(256)
-					if err != nil {
-						log.Debug().Err(err).Uint64("lt", tx.LT).Msg("failed to load tx in msg contract data hash")
+		for tx := range ch {
+			for {
+				err = func() error {
+					if tx.IO.In == nil || tx.IO.In.MsgType != tlb.MsgTypeInternal {
 						return nil
 					}
 
-					dataDepth, err := body.LoadUInt(10)
+					log.Debug().Uint64("lt", tx.LT).Msg("new tx on discovery contract")
+
+					in := tx.IO.In.AsInternal()
+					body := in.Body.BeginParse()
+
+					op, err := body.LoadUInt(32)
 					if err != nil {
-						log.Debug().Err(err).Uint64("lt", tx.LT).Msg("failed to load tx in msg contract data depth")
+						log.Debug().Err(err).Uint64("lt", tx.LT).Msg("failed to load tx in msg op")
 						return nil
 					}
 
-					var depth = make([]byte, 2)
-					binary.BigEndian.PutUint16(depth, uint16(dataDepth))
+					switch op {
+					case 0xd027efe5: // op::cron_notify
+						dataHash, err := body.LoadSlice(256)
+						if err != nil {
+							log.Debug().Err(err).Uint64("lt", tx.LT).Msg("failed to load tx in msg contract data hash")
+							return nil
+						}
 
-					// emulate pruned cell
-					prn := cell.FromRawUnsafe(cell.RawUnsafeCell{
-						IsSpecial: true,
-						LevelMask: cell.LevelMask{Mask: 1},
-						BitsSz:    256 + 16 + 16,
-						Data:      append([]byte{0x01, 0x01}, append(dataHash, depth...)...),
-					})
+						dataDepth, err := body.LoadUInt(10)
+						if err != nil {
+							log.Debug().Err(err).Uint64("lt", tx.LT).Msg("failed to load tx in msg contract data depth")
+							return nil
+						}
 
-					var version int
-					var addrVerified bool
-					for _, code := range contract.Codes {
-						sic := levelUp(cell.BeginCell().MustStoreUInt(0b00110, 5).MustStoreRef(levelUp(code.Code)).MustStoreRef(prn).EndCell())
+						var depth = make([]byte, 2)
+						binary.BigEndian.PutUint16(depth, uint16(dataDepth))
 
-						if address.NewAddress(0, byte(0), sic.Hash(0)).Equals(in.SrcAddr) {
-							addrVerified = true
-							version = code.Version
+						// emulate pruned cell
+						prn := cell.FromRawUnsafe(cell.RawUnsafeCell{
+							IsSpecial: true,
+							LevelMask: cell.LevelMask{Mask: 1},
+							BitsSz:    256 + 16 + 16,
+							Data:      append([]byte{0x01, 0x01}, append(dataHash, depth...)...),
+						})
+
+						var version int
+						var addrVerified bool
+						for _, code := range contract.Codes {
+							sic := levelUp(cell.BeginCell().MustStoreUInt(0b00110, 5).MustStoreRef(levelUp(code.Code)).MustStoreRef(prn).EndCell())
+
+							if address.NewAddress(0, byte(0), sic.Hash(0)).Equals(in.SrcAddr) {
+								addrVerified = true
+								version = code.Version
+								break
+							}
+						}
+
+						if !addrVerified {
+							log.Debug().Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("cron contract not verified")
+							return nil
+						}
+
+						var ok bool
+						var next int64
+						var reward tlb.Coins
+						for i := 0; i < 20; i++ {
+							var retry bool
+							ok, next, reward, err, retry = s.verifyContract(context.Background(), in.SrcAddr, version)
+							if err != nil {
+								// TODO: more reliable
+								if retry {
+									log.Debug().Err(err).Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("failed to verify contract, will retry")
+									time.Sleep(500 * time.Millisecond)
+									continue
+								}
+								log.Debug().Err(err).Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("failed to verify contract")
+							}
 							break
 						}
-					}
 
-					if !addrVerified {
-						log.Debug().Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("cron contract not verified")
-						return nil
-					}
-
-					var ok bool
-					var next int64
-					var reward tlb.Coins
-					for i := 0; i < 20; i++ {
-						var retry bool
-						ok, next, reward, err, retry = s.verifyContract(context.Background(), in.SrcAddr, version)
-						if err != nil {
-							// TODO: more reliable
-							if retry {
-								log.Debug().Err(err).Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("failed to verify contract, will retry")
-								time.Sleep(500 * time.Millisecond)
-								continue
-							}
-							log.Debug().Err(err).Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("failed to verify contract")
+						if !ok {
+							log.Debug().Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("cron contract not verified")
+							return nil
 						}
-						break
+
+						if err = s.AddTrigger(db.CronContract{Version: version, ContractAddr: in.SrcAddr.String(), NextQuery: next, Reward: reward.String()}, true); err != nil {
+							return err
+						}
+
+						log.Info().Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Int("version", version).Msg("cron contract notification discovered")
 					}
 
-					if !ok {
-						log.Debug().Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Msg("cron contract not verified")
-						return nil
-					}
-
-					if err = s.AddTrigger(db.CronContract{Version: version, ContractAddr: in.SrcAddr.String(), NextQuery: next, Reward: reward.String()}, true); err != nil {
-						return err
-					}
-
-					log.Info().Uint64("lt", tx.LT).Str("addr", in.SrcAddr.String()).Int("version", version).Msg("cron contract notification discovered")
+					return nil
+				}()
+				if err != nil {
+					log.Error().Err(err).Uint64("lt", tx.LT).Msg("failed to process tx")
+					time.Sleep(time.Second)
+					continue
 				}
-
-				return nil
-			}()
-			if err != nil {
-				log.Error().Err(err).Uint64("lt", tx.LT).Msg("failed to process tx")
-				time.Sleep(time.Second)
-				continue
+				break
 			}
-			break
+
+			if err = s.db.SetCronScannerLT(tx.LT); err != nil {
+				return fmt.Errorf("failed to set scanner lt: %w", err)
+			}
+			lt = tx.LT
 		}
 
-		if err = s.db.SetCronScannerLT(tx.LT); err != nil {
-			return fmt.Errorf("failed to set scanner lt: %w", err)
+		select {
+		case <-ctx.Done():
+			log.Warn().Msg("cron contracts discovery stopped")
+			return ctx.Err()
+		default:
+		}
+
+		log.Info().Uint64("lt", lt).Msg("cron contracts discovery stopped unexpectedly, restarting in 3 seconds")
+
+		select {
+		case <-ctx.Done():
+			log.Warn().Msg("cron contracts discovery stopped")
+			return ctx.Err()
+		case <-time.After(3 * time.Second):
 		}
 	}
-
-	return nil
 }
 
 func (s *Service) StartSender(ctx context.Context) error {
@@ -385,6 +402,9 @@ func (s *Service) AddTrigger(c db.CronContract, toDB bool) error {
 }
 
 func (s *Service) addVerify(trig *NextTrigger) {
+	s.mx.Lock()
+	defer s.mx.Unlock()
+
 	trig.Next = nil
 
 	if s.verify == nil || trig.At < s.verify.At {

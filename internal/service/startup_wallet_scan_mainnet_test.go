@@ -77,7 +77,9 @@ func TestScanWalletTransactions_Mainnet_NoBlockchainMocks(t *testing.T) {
 	}
 
 	fetcher := &mainnetFetchStorageInfoStub{t: t}
-	scanWalletTransactions(ctx, walletAddr, acc.LastTxLT, acc.LastTxHash, 0, api.ListTransactions, fetcher)
+	if err := scanWalletTransactions(ctx, walletAddr, acc.LastTxLT, acc.LastTxHash, 0, api.ListTransactions, fetcher); err != nil {
+		t.Skipf("skipping due to transient liteserver error during mainnet scan: %v", err)
+	}
 
 	if len(fetcher.calls) == 0 {
 		t.Fatalf("expected at least one FetchStorageInfo call from real mainnet scan for wallet %s", walletAddr.String())

@@ -331,11 +331,6 @@ func startWalletStartupScanFlow(cfg *config.Config, configPath string, lsCfg *li
 	}
 
 	stopLT := cfg.StartupWalletScanLastLT
-	cfg.StartupWalletScanLastLT = acc.LastTxLT
-	if err = config.SaveConfig(cfg, configPath); err != nil {
-		log.Warn().Err(err).Uint64("lt", acc.LastTxLT).Msg("failed to save startup wallet scan last lt to config")
-	}
-
 	if stopLT >= acc.LastTxLT {
 		log.Debug().
 			Str("node", archiveNode).
@@ -352,7 +347,25 @@ func startWalletStartupScanFlow(cfg *config.Config, configPath string, lsCfg *li
 		Uint64("stop_lt", stopLT).
 		Msg("startup wallet scan scheduled")
 
-	svc.StartWalletStartupScan(context.Background(), archiveAPI, acc.LastTxLT, acc.LastTxHash, stopLT)
+	done := svc.StartWalletStartupScan(context.Background(), archiveAPI, acc.LastTxLT, acc.LastTxHash, stopLT)
+	commitStartupWalletScanCursorOnSuccess(configPath, cfg, acc.LastTxLT, done)
+}
+
+func commitStartupWalletScanCursorOnSuccess(configPath string, cfg *config.Config, latestLT uint64, done <-chan error) {
+	go func() {
+		if err := <-done; err != nil {
+			log.Warn().Err(err).Uint64("lt", latestLT).Msg("startup wallet scan failed, cursor is not advanced")
+			return
+		}
+
+		cfg.StartupWalletScanLastLT = latestLT
+		if err := config.SaveConfig(cfg, configPath); err != nil {
+			log.Warn().Err(err).Uint64("lt", latestLT).Msg("failed to save startup wallet scan last lt to config")
+			return
+		}
+
+		log.Debug().Uint64("lt", latestLT).Msg("startup wallet scan cursor saved")
+	}()
 }
 
 func buildArchiveTransactionsAPI(lsCfg *liteclient.GlobalConfig) (ton.APIClientWrapped, string, error) {

@@ -99,7 +99,7 @@ func (s *Server) updateDHT(ctx context.Context) error {
 	}
 
 	ctxStore, cancel = context.WithTimeout(ctx, 90*time.Second)
-	stored, id, err = s.dht.Store(ctx, pID, []byte("storage-provider"), 0, data, dht.UpdateRuleSignature{}, 30*time.Minute, s.providerKey, 0)
+	stored, id, err = s.dht.Store(ctxStore, pID, []byte("storage-provider"), 0, data, dht.UpdateRuleSignature{}, 30*time.Minute, s.providerKey, 0)
 	cancel()
 	if err != nil && stored == 0 {
 		return fmt.Errorf("failed to store storage-provider record in dht: %w", err)
