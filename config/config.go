@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+const privateConfigPerms = 0o600
+
 type StorageConfig struct {
 	BaseURL                 string
 	Login                   string
@@ -36,6 +38,7 @@ type Config struct {
 	MaxSpan                      uint32
 	MaxBagSizeBytes              uint64
 	MaxMinutesNoDownloadProgress uint32
+	StartupWalletScanLastLT      uint64
 	Storages                     []StorageConfig
 	CRON                         CronConfig
 }
@@ -184,6 +187,10 @@ func LoadConfig(path string) (*Config, error) {
 
 		return cfg, nil
 	} else if err == nil {
+		if err = ensurePrivateConfigPermissions(path); err != nil {
+			return nil, fmt.Errorf("failed to secure config permissions: %w", err)
+		}
+
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read config: %w", err)
@@ -227,9 +234,22 @@ func SaveConfig(cfg *Config, path string) error {
 		return err
 	}
 
-	err = os.WriteFile(path, data, 0766)
+	err = os.WriteFile(path, data, privateConfigPerms)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func ensurePrivateConfigPermissions(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
+	if info.Mode().Perm() == privateConfigPerms {
+		return nil
+	}
+
+	return os.Chmod(path, privateConfigPerms)
 }

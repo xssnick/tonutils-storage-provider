@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"github.com/pterm/pterm"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -29,6 +30,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var (
@@ -238,6 +240,8 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to init service")
 	}
 
+	startWalletStartupScanFlow(cfg, *ConfigPath, lsCfg, svc, w.WalletAddress())
+
 	server.NewServer(dhtClient, gate, cfg.ADNLKey, cfg.ProviderKey, svc, log.Logger.With().Str("source", "server").Logger())
 
 	log.Info().Str("build", GitCommit).Hex("provider_key", cfg.ProviderKey.Public().(ed25519.PublicKey)).Msg("service started")
@@ -292,4 +296,133 @@ func main() {
 			continue
 		}
 	}
+}
+
+const startupWalletArchiveProbeSeqno = uint32(100)
+
+func startWalletStartupScanFlow(cfg *config.Config, configPath string, lsCfg *liteclient.GlobalConfig, svc *service.Service, walletAddr *address.Address) {
+	if cfg == nil || lsCfg == nil || svc == nil || walletAddr == nil {
+		return
+	}
+
+	archiveAPI, archiveNode, err := buildArchiveTransactionsAPI(lsCfg)
+	if err != nil {
+		log.Warn().Err(err).Msg("archive liteserver was not found, startup wallet scan skipped")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	master, err := archiveAPI.GetMasterchainInfo(ctx)
+	if err != nil {
+		log.Warn().Err(err).Str("node", archiveNode).Msg("failed to get masterchain info from archive node, startup wallet scan skipped")
+		return
+	}
+
+	acc, err := archiveAPI.WaitForBlock(master.SeqNo).GetAccount(ctx, master, walletAddr)
+	if err != nil {
+		log.Warn().Err(err).Str("node", archiveNode).Msg("failed to get wallet account from archive node, startup wallet scan skipped")
+		return
+	}
+	if acc == nil || !acc.IsActive || acc.LastTxLT == 0 || len(acc.LastTxHash) == 0 {
+		log.Warn().Str("node", archiveNode).Str("wallet", walletAddr.String()).Msg("wallet has no transactions for startup scan, skipped")
+		return
+	}
+
+	stopLT := cfg.StartupWalletScanLastLT
+	if stopLT >= acc.LastTxLT {
+		log.Debug().
+			Str("node", archiveNode).
+			Uint64("last_lt", cfg.StartupWalletScanLastLT).
+			Uint64("stop_lt", stopLT).
+			Msg("startup wallet scan skipped, no new wallet transactions")
+		return
+	}
+
+	log.Info().
+		Str("node", archiveNode).
+		Str("wallet", walletAddr.String()).
+		Uint64("from_lt", acc.LastTxLT).
+		Uint64("stop_lt", stopLT).
+		Msg("startup wallet scan scheduled")
+
+	done := svc.StartWalletStartupScan(context.Background(), archiveAPI, acc.LastTxLT, acc.LastTxHash, stopLT)
+	commitStartupWalletScanCursorOnSuccess(configPath, cfg, acc.LastTxLT, done)
+}
+
+func commitStartupWalletScanCursorOnSuccess(configPath string, cfg *config.Config, latestLT uint64, done <-chan error) {
+	go func() {
+		if err := <-done; err != nil {
+			log.Warn().Err(err).Uint64("lt", latestLT).Msg("startup wallet scan failed, cursor is not advanced")
+			return
+		}
+
+		cfg.StartupWalletScanLastLT = latestLT
+		if err := config.SaveConfig(cfg, configPath); err != nil {
+			log.Warn().Err(err).Uint64("lt", latestLT).Msg("failed to save startup wallet scan last lt to config")
+			return
+		}
+
+		log.Debug().Uint64("lt", latestLT).Msg("startup wallet scan cursor saved")
+	}()
+}
+
+func buildArchiveTransactionsAPI(lsCfg *liteclient.GlobalConfig) (ton.APIClientWrapped, string, error) {
+	if lsCfg == nil || len(lsCfg.Liteservers) == 0 {
+		return nil, "", fmt.Errorf("liteservers are not defined in network config")
+	}
+
+	var lastErr error
+	for _, ls := range lsCfg.Liteservers {
+		addr := fmt.Sprintf("%s:%d", liteserverIP(ls.IP), ls.Port)
+		pool := liteclient.NewConnectionPool()
+
+		connectCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		err := pool.AddConnection(connectCtx, addr, ls.ID.Key)
+		cancel()
+		if err != nil {
+			lastErr = err
+			pool.Stop()
+			continue
+		}
+
+		api := ton.NewAPIClient(pool).WithRetry(0).WithLSInfoInErrors()
+		if isArchiveLiteserver(api, addr) {
+			return api, addr, nil
+		}
+
+		pool.Stop()
+	}
+
+	if lastErr != nil {
+		return nil, "", fmt.Errorf("archive liteserver was not found: %w", lastErr)
+	}
+	return nil, "", fmt.Errorf("archive liteserver was not found")
+}
+
+func isArchiveLiteserver(api ton.APIClientWrapped, addr string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	master, err := api.GetMasterchainInfo(ctx)
+	if err != nil {
+		log.Debug().Err(err).Str("addr", addr).Msg("failed to master block")
+		return false
+	}
+
+	lookupCtx, lookupCancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer lookupCancel()
+
+	_, err = api.LookupBlock(lookupCtx, master.Workchain, master.Shard, startupWalletArchiveProbeSeqno)
+	if err != nil {
+		log.Debug().Err(err).Str("addr", addr).Uint32("seqno", startupWalletArchiveProbeSeqno).Msg("failed to lookup startup wallet archive probe block")
+		return false
+	}
+	return true
+}
+
+func liteserverIP(ip int64) string {
+	v := uint32(ip)
+	return fmt.Sprintf("%d.%d.%d.%d", byte(v>>24), byte(v>>16), byte(v>>8), byte(v))
 }

@@ -68,12 +68,10 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 					if err != nil {
 						if strings.HasSuffix(err.Error(), "not found") {
 							log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("bag already removed")
-							return nil
+						} else {
+							return fmt.Errorf("failed to get bag from storage: %w", err)
 						}
-						return fmt.Errorf("failed to get bag from storage: %w", err)
-					}
-
-					if strings.HasSuffix(bd.Path, "/provider/"+hex.EncodeToString(bagId)) {
+					} else if strings.HasSuffix(bd.Path, "/provider/"+hex.EncodeToString(bagId)) {
 						// delete only what provider added
 						if err := s.storage.RemoveBag(ctx, bagId, true); err != nil {
 							return fmt.Errorf("failed to remove bag from storage: %w", err)
@@ -110,8 +108,8 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 
 	log.Info().Str("addr", contractAddr.String()).Msg("bag hosting routine is started")
 
-	var lastPercent float64
-	var lastTxAt, lastDownloadPercentUpdateAt time.Time
+	var lastDownloaded uint64
+	var lastTxAt, lastDownloadUpdateAt time.Time
 	var wait time.Duration
 	for {
 		select {
@@ -278,18 +276,19 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 					}
 
 					verified = true
-					lastDownloadPercentUpdateAt = time.Now()
+					lastDownloaded = bag.Downloaded
+					lastDownloadUpdateAt = time.Now()
 				}
 
 				if bag.Downloaded != bag.Size {
 					progress := (float64(bag.Downloaded) / float64(bag.Size)) * 100
-					if progress > lastPercent {
-						lastPercent = progress
-						lastDownloadPercentUpdateAt = time.Now()
+					if bag.Downloaded > lastDownloaded {
+						lastDownloaded = bag.Downloaded
+						lastDownloadUpdateAt = time.Now()
 					}
 					log.Debug().Str("addr", contractAddr.String()).Hex("bag", bagId).Str("progress", fmt.Sprintf("%.2f", progress)).Msg("download is still in progress, will wait and check again")
 
-					if lastDownloadPercentUpdateAt.Before(time.Now().Add(-time.Duration(s.maxMinutesNoProgress) * time.Minute)) {
+					if lastDownloadUpdateAt.Before(time.Now().Add(-time.Duration(s.maxMinutesNoProgress) * time.Minute)) {
 						log.Warn().Str("addr", contractAddr.String()).
 							Uint64("size", bag.BagSize).
 							Uint32("piece", bag.PieceSize).
