@@ -84,7 +84,10 @@ func (c *Client) connect(ctx context.Context, providerKey []byte) (*providerPeer
 	if len(list.Addresses) == 0 {
 		return nil, fmt.Errorf("no addresses for %s", hex.EncodeToString(providerKey))
 	}
-	addr := fmt.Sprintf("%s:%d", list.Addresses[0].IP.String(), list.Addresses[0].Port)
+	addr, err := firstDialAddress(list)
+	if err != nil {
+		return nil, fmt.Errorf("no dialable address for %s: %w", hex.EncodeToString(providerKey), err)
+	}
 
 	peer, err := c.gate.RegisterClient(addr, key)
 	if err != nil {
@@ -102,6 +105,21 @@ func (c *Client) connect(ctx context.Context, providerKey []byte) (*providerPeer
 	p.conn = peer
 
 	return p, nil
+}
+
+func firstDialAddress(list *address.List) (string, error) {
+	if list == nil {
+		return "", fmt.Errorf("address list is nil")
+	}
+
+	for _, addr := range list.Addresses {
+		dialAddr, err := address.DialString(addr)
+		if err == nil {
+			return dialAddr, nil
+		}
+	}
+
+	return "", fmt.Errorf("no dialable addresses")
 }
 
 func (c *Client) GetStorageRates(ctx context.Context, provider []byte, size uint64) (*StorageRatesResponse, error) {

@@ -101,7 +101,7 @@ func main() {
 	} else {
 		lsCfg, err = liteclient.GetConfigFromUrl(context.Background(), "https://ton.org/global.config.json")
 		if err != nil {
-			log.Warn().Err(err).Msg("failed to to download ton config, we will take it from static cache")
+			log.Warn().Err(err).Msg("failed to download ton config, we will take it from static cache")
 
 			lsCfg = &liteclient.GlobalConfig{}
 			if err = json.NewDecoder(bytes.NewBufferString(config.FallbackNetworkConfig)).Decode(lsCfg); err != nil {
@@ -114,7 +114,7 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to add liteserver connections from ton config")
 	}
 
-	api := ton.NewAPIClient(lc).WithRetry(2).WithLSInfoInErrors()
+	api := ton.NewAPIClient(lc).WithRetry(3).WithLSInfoInErrors()
 	w, err := wallet.FromPrivateKey(api, cfg.ProviderKey, wallet.V3R2)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to load wallet")
@@ -163,8 +163,8 @@ func main() {
 	}
 
 	gate := adnl.NewGateway(cfg.ADNLKey)
-	gate.SetAddressList([]*address2.UDP{
-		{
+	gate.SetAddressList([]address2.Address{
+		&address2.UDP{
 			IP:   ip,
 			Port: int32(port),
 		},
@@ -387,7 +387,7 @@ func buildArchiveTransactionsAPI(lsCfg *liteclient.GlobalConfig) (ton.APIClientW
 			continue
 		}
 
-		api := ton.NewAPIClient(pool).WithRetry(0).WithLSInfoInErrors()
+		api := ton.NewAPIClient(pool).WithRetry(3).WithLSInfoInErrors()
 		if isArchiveLiteserver(api, addr) {
 			return api, addr, nil
 		}
@@ -407,7 +407,7 @@ func isArchiveLiteserver(api ton.APIClientWrapped, addr string) bool {
 
 	master, err := api.GetMasterchainInfo(ctx)
 	if err != nil {
-		log.Debug().Err(err).Str("addr", addr).Msg("failed to master block")
+		log.Debug().Err(err).Str("addr", addr).Msg("failed to get master block")
 		return false
 	}
 

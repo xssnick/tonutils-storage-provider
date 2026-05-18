@@ -116,7 +116,12 @@ func processStartupWalletScanTx(ctx context.Context, tx *tlb.Transaction, seen m
 		return
 	}
 
-	op, err := in.Body.BeginParse().LoadUInt(32)
+	body, err := in.Body.BeginParse()
+	if err != nil {
+		return
+	}
+
+	op, err := body.LoadUInt(32)
 	if err != nil || op != startupWalletScanOpcode {
 		return
 	}

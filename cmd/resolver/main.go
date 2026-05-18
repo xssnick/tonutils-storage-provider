@@ -7,10 +7,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
-	"fmt"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/xssnick/tonutils-go/adnl"
+	adnladdress "github.com/xssnick/tonutils-go/adnl/address"
 	"github.com/xssnick/tonutils-go/adnl/dht"
 	"github.com/xssnick/tonutils-go/adnl/keys"
 	"github.com/xssnick/tonutils-go/adnl/overlay"
@@ -218,7 +218,11 @@ func adnlCheck(cli *dht.Client, gw *adnl.Gateway, adnlAddr []byte, bag []byte, p
 	log.Info().Msgf("Found %d addresses", len(addrList.Addresses))
 
 	for _, address := range addrList.Addresses {
-		addr := address.IP.String() + ":" + fmt.Sprint(address.Port)
+		addr, err := adnladdress.DialString(address)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to parse ADNL address")
+			continue
+		}
 		log.Info().Msgf("Found address %s checking ping...", addr)
 
 		peer, err := gw.RegisterClient(addr, pubKey)
@@ -282,8 +286,7 @@ func adnlCheck(cli *dht.Client, gw *adnl.Gateway, adnlAddr []byte, bag []byte, p
 			}
 
 			var info TorrentInfo
-			err = tlb.LoadFromCell(&info, cl.BeginParse())
-			if err != nil {
+			if err = tlb.Parse(&info, cl); err != nil {
 				log.Warn().Err(err).Msg("failed to parse torrent info tlb")
 				continue
 			}

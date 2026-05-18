@@ -66,7 +66,7 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 				if usedByAnother == "" {
 					bd, err := s.storage.GetBag(ctx, bagId)
 					if err != nil {
-						if strings.HasSuffix(err.Error(), "not found") {
+						if errors.Is(err, storage.ErrNotFound) {
 							log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("bag already removed")
 						} else {
 							return fmt.Errorf("failed to get bag from storage: %w", err)
@@ -351,7 +351,7 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 				}
 
 				if pi.MaxSpan > s.maxSpan {
-					log.Warn().Str("addr", contractAddr.String()).Uint32("span", pi.MaxSpan).Hex("bag", bagId).Msg("too short long, dropping storage")
+					log.Warn().Str("addr", contractAddr.String()).Uint32("span", pi.MaxSpan).Hex("bag", bagId).Msg("too long span, dropping storage")
 
 					drop()
 					return nil

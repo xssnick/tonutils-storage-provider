@@ -16,7 +16,6 @@ import (
 	"github.com/xssnick/tonutils-storage-provider/pkg/contract"
 	"github.com/xssnick/tonutils-storage-provider/pkg/storage"
 	"math/big"
-	"strings"
 	"sync"
 )
 
@@ -66,7 +65,7 @@ func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.P
 	w.GetSpec().(*wallet.SpecV3).SetMessagesTTL(120)
 
 	globalCtx, stop := context.WithCancel(context.Background())
- s := &Service{
+	s := &Service{
 		maxMinutesNoProgress: maxMinutesNoProgress,
 		key:                  key,
 		ton:                  ton,
@@ -213,7 +212,7 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 	pi, contractAvailableBalance, err := contract.GetProviderDataV1(ctx, s.ton, master, contractAddr, s.key.Public().(ed25519.PublicKey))
 	if err != nil {
 		if errors.Is(err, contract.ErrProviderNotFound) {
-			return nil, fmt.Errorf("provider is not exists in this contract: %s", hex.EncodeToString(s.key.Public().(ed25519.PublicKey)))
+			return nil, fmt.Errorf("provider does not exist in this contract: %s", hex.EncodeToString(s.key.Public().(ed25519.PublicKey)))
 		}
 		return nil, fmt.Errorf("failed to run contract method get_provider_info: %w", err)
 	}
@@ -303,7 +302,7 @@ func (s *Service) fetchStorageInfo(ctx context.Context, bag db.StoredBag, byteTo
 
 	b, err := s.storage.GetBag(ctx, bag.BagID)
 	if err != nil {
-		if strings.HasSuffix(err.Error(), "not found") {
+		if errors.Is(err, storage.ErrNotFound) {
 			return &StorageInfo{
 				Status: "resolving",
 			}, nil

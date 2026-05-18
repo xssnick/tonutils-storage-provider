@@ -16,6 +16,7 @@ import (
 	"github.com/xssnick/tonutils-go/tlb"
 	"github.com/xssnick/tonutils-storage-provider/internal/service"
 	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
+	"strings"
 	"time"
 )
 
@@ -84,7 +85,7 @@ func (s *Server) updateDHT(ctx context.Context) error {
 	addr := s.gate.GetAddressList()
 
 	ctxStore, cancel := context.WithTimeout(ctx, 90*time.Second)
-	stored, id, err := s.dht.StoreAddress(ctxStore, addr, 30*time.Minute, s.key, 0)
+	stored, id, err := s.dht.StoreAddress(ctxStore, addr, 30*time.Minute, s.key)
 	cancel()
 	if err != nil && stored == 0 {
 		return fmt.Errorf("failed to store address: %w", err)
@@ -99,7 +100,7 @@ func (s *Server) updateDHT(ctx context.Context) error {
 	}
 
 	ctxStore, cancel = context.WithTimeout(ctx, 90*time.Second)
-	stored, id, err = s.dht.Store(ctxStore, pID, []byte("storage-provider"), 0, data, dht.UpdateRuleSignature{}, 30*time.Minute, s.providerKey, 0)
+	stored, id, err = s.dht.Store(ctxStore, pID, []byte("storage-provider"), 0, data, dht.UpdateRuleSignature{}, 30*time.Minute, s.providerKey)
 	cancel()
 	if err != nil && stored == 0 {
 		return fmt.Errorf("failed to store storage-provider record in dht: %w", err)
@@ -153,6 +154,9 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 				case errors.Is(err, service.ErrTooLongSpan):
 				case errors.Is(err, service.ErrNoSpace):
 				case errors.Is(err, service.ErrTooBigBag):
+				case isTemporaryProviderError(err):
+					reason = "temporary provider error"
+					log.Debug().Err(err).Str("addr", addr.String()).Msg("temporary provider error")
 				default:
 					reason = "internal provider error"
 					log.Warn().Err(err).Str("addr", addr.String()).Msg("internal provider error")
@@ -195,4 +199,19 @@ func (s *Server) handleRLDPQuery(peer *rldp.RLDP) func(transfer []byte, query *r
 
 		return nil
 	}
+}
+
+func isTemporaryProviderError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+
+	errText := strings.ToLower(err.Error())
+	return strings.Contains(errText, "failed to get master block") ||
+		strings.Contains(errText, "deadline exceeded") ||
+		strings.Contains(errText, "get masterchain info")
 }

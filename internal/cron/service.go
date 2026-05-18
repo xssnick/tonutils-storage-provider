@@ -2,7 +2,6 @@ package cron
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog/log"
@@ -72,7 +71,10 @@ func (s *Service) StartWalletScanner(ctx context.Context) error {
 				}
 
 				in := tx.IO.In.AsInternal()
-				body := in.Body.BeginParse()
+				body, err := in.Body.BeginParse()
+				if err != nil {
+					return
+				}
 
 				op, err := body.LoadUInt(32)
 				if err != nil {
@@ -134,7 +136,11 @@ func (s *Service) StartScanner(ctx context.Context) error {
 					log.Debug().Uint64("lt", tx.LT).Msg("new tx on discovery contract")
 
 					in := tx.IO.In.AsInternal()
-					body := in.Body.BeginParse()
+					body, err := in.Body.BeginParse()
+					if err != nil {
+						log.Debug().Err(err).Uint64("lt", tx.LT).Msg("failed to parse tx in msg body")
+						return nil
+					}
 
 					op, err := body.LoadUInt(32)
 					if err != nil {
@@ -156,21 +162,13 @@ func (s *Service) StartScanner(ctx context.Context) error {
 							return nil
 						}
 
-						var depth = make([]byte, 2)
-						binary.BigEndian.PutUint16(depth, uint16(dataDepth))
-
-						// emulate pruned cell
-						prn := cell.FromRawUnsafe(cell.RawUnsafeCell{
-							IsSpecial: true,
-							LevelMask: cell.LevelMask{Mask: 1},
-							BitsSz:    256 + 16 + 16,
-							Data:      append([]byte{0x01, 0x01}, append(dataHash, depth...)...),
-						})
-
 						var version int
 						var addrVerified bool
 						for _, code := range contract.Codes {
-							sic := levelUp(cell.BeginCell().MustStoreUInt(0b00110, 5).MustStoreRef(levelUp(code.Code)).MustStoreRef(prn).EndCell())
+							sic, err := buildCronStateInitFromDataProof(code.Code, dataHash, uint16(dataDepth))
+							if err != nil {
+								return fmt.Errorf("failed to build cron state init proof body: %w", err)
+							}
 
 							if address.NewAddress(0, byte(0), sic.Hash(0)).Equals(in.SrcAddr) {
 								addrVerified = true
@@ -439,7 +437,8 @@ func (s *Service) verifyContract(ctx context.Context, addr *address.Address, ver
 
 	res, err := s.api.RunGetMethod(ctx, master, addr, methodByVersion(version))
 	if err != nil {
-		if _, ok := err.(ton.ContractExecError); ok {
+		var contractExecError ton.ContractExecError
+		if errors.As(err, &contractExecError) {
 			// not initialized contract or something failed
 			return false, 0, tlb.ZeroCoins, nil, false
 		}
@@ -475,8 +474,48 @@ func (s *Service) verifyContract(ctx context.Context, addr *address.Address, ver
 	return true, nextCallAt.Int64(), tlb.FromNanoTON(reward), nil, false
 }
 
-func levelUp(c *cell.Cell) *cell.Cell {
-	u := c.ToRawUnsafe()
-	u.LevelMask.Mask = 1
-	return cell.FromRawUnsafe(u)
+// Discovery notifications carry only the cron data hash/depth, so rebuild the
+// StateInit proof body with full code and a pruned data reference.
+func buildCronStateInitFromDataProof(codeCell *cell.Cell, dataHash []byte, dataDepth uint16) (*cell.Cell, error) {
+	if codeCell == nil {
+		return nil, fmt.Errorf("code cell is nil")
+	}
+
+	dataProof, err := buildCronDataProofCell(dataHash, dataDepth)
+	if err != nil {
+		return nil, err
+	}
+
+	state := cell.BeginCell()
+	if err = state.StoreUInt(0b00110, 5); err != nil {
+		return nil, err
+	}
+	if err = state.StoreRef(codeCell); err != nil {
+		return nil, err
+	}
+	if err = state.StoreRef(dataProof); err != nil {
+		return nil, err
+	}
+	return state.EndCell(), nil
+}
+
+func buildCronDataProofCell(dataHash []byte, dataDepth uint16) (*cell.Cell, error) {
+	if len(dataHash) != 32 {
+		return nil, fmt.Errorf("invalid data hash length %d", len(dataHash))
+	}
+
+	dataProof := cell.BeginCell()
+	if err := dataProof.StoreUInt(uint64(cell.PrunedCellType), 8); err != nil {
+		return nil, err
+	}
+	if err := dataProof.StoreUInt(1, 8); err != nil {
+		return nil, err
+	}
+	if err := dataProof.StoreSlice(dataHash, 256); err != nil {
+		return nil, err
+	}
+	if err := dataProof.StoreUInt(uint64(dataDepth), 16); err != nil {
+		return nil, err
+	}
+	return dataProof.EndCellSpecial(true)
 }

@@ -246,42 +246,42 @@ func GetProvidersV1(ctx context.Context, api ton.APIClientWrapped, master *ton.B
 	for _, v := range list {
 		p, ok := v.([]any)
 		if !ok {
-			return nil, tlb.ZeroCoins, fmt.Errorf("icorrect provider value")
+			return nil, tlb.ZeroCoins, fmt.Errorf("incorrect provider value")
 		}
 		if len(p) != 6 {
-			return nil, tlb.ZeroCoins, fmt.Errorf("icorrect provider value len")
+			return nil, tlb.ZeroCoins, fmt.Errorf("incorrect provider value len")
 		}
 
 		bKey := make([]byte, 32)
 		key, ok := p[0].(*big.Int)
 		if !ok {
-			return nil, tlb.ZeroCoins, fmt.Errorf("icorrect provider value 'key' param")
+			return nil, tlb.ZeroCoins, fmt.Errorf("incorrect provider value 'key' param")
 		}
 		key.FillBytes(bKey)
 
 		ratePerMb, ok := p[1].(*big.Int)
 		if !ok {
-			return nil, tlb.ZeroCoins, fmt.Errorf("icorrect provider value 'ratePerMb' param")
+			return nil, tlb.ZeroCoins, fmt.Errorf("incorrect provider value 'ratePerMb' param")
 		}
 
 		maxSpan, ok := p[2].(*big.Int)
 		if !ok {
-			return nil, tlb.ZeroCoins, fmt.Errorf("icorrect provider value 'maxSpan' param")
+			return nil, tlb.ZeroCoins, fmt.Errorf("incorrect provider value 'maxSpan' param")
 		}
 
 		lastProofTime, ok := p[3].(*big.Int)
 		if !ok {
-			return nil, tlb.ZeroCoins, fmt.Errorf("icorrect provider value 'lastProofTime' param")
+			return nil, tlb.ZeroCoins, fmt.Errorf("incorrect provider value 'lastProofTime' param")
 		}
 
 		byteToProof, ok := p[4].(*big.Int)
 		if !ok {
-			return nil, tlb.ZeroCoins, fmt.Errorf("icorrect provider value 'byteToProof' param")
+			return nil, tlb.ZeroCoins, fmt.Errorf("incorrect provider value 'byteToProof' param")
 		}
 
 		nonce, ok := p[5].(*big.Int)
 		if !ok {
-			return nil, tlb.ZeroCoins, fmt.Errorf("icorrect provider value 'nonce' param")
+			return nil, tlb.ZeroCoins, fmt.Errorf("incorrect provider value 'nonce' param")
 		}
 
 		providers = append(providers, ProviderDataV1{
