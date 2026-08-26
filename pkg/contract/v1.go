@@ -50,6 +50,16 @@ type StorageDataV1 struct {
 	MerkleHash  []byte
 }
 
+// WARNING: The requested provider set is not part of StateInit. For the same
+// torrent hash, Merkle hash, data size, piece size, and owner address,
+// PrepareV1DeployData derives the same contract address regardless of providers.
+//
+// The returned modify_providers body is a full desired-set update, not an append.
+// If accepted by an already-active contract, every provider omitted from
+// providers is removed. An existing entry whose ProviderInfo changes is removed
+// and re-created, resetting its proof state. Before updating an existing contract,
+// fetch its current provider set and include every entry that must remain. Use a
+// different owner address when an independent contract is required.
 func PrepareV1DeployData(torrentHash, merkleHash []byte, dataSize uint64, pieceSize uint32, ownerAddr *address.Address, providers []ProviderV1) (contractAddr *address.Address, stateInit *tlb.StateInit, body *cell.Cell, err error) {
 	data, err := tlb.ToCell(StorageV1{
 		TorrentHash: torrentHash,
