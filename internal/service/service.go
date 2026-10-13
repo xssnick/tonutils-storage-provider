@@ -228,10 +228,12 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 		return nil, fmt.Errorf("failed to run contract method get_provider_info: %w", err)
 	}
 
-	if pi.MaxSpan < s.minSpan {
+	// provider entry is recreated with zero last proof when terms change, so proved terms were accepted before
+	fresh := pi.LastProofAt.Unix() <= 0
+	if fresh && pi.MaxSpan < s.minSpan {
 		return nil, ErrTooShortSpan
 	}
-	if pi.MaxSpan > s.maxSpan {
+	if fresh && pi.MaxSpan > s.maxSpan {
 		return nil, ErrTooLongSpan
 	}
 
@@ -251,7 +253,7 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 		return nil, ErrLowBalance
 	}
 
-	if pi.RatePerMB.Nano().Cmp(s.minRatePerMb.Nano()) < 0 {
+	if fresh && pi.RatePerMB.Nano().Cmp(s.minRatePerMb.Nano()) < 0 {
 		return nil, ErrTooLowRate
 	}
 
