@@ -25,6 +25,8 @@ Contract used for providing storage is shared between many providers and can be 
 
 Contract source can be found [here](https://github.com/xssnick/tonutils-contracts/blob/master/contracts/storage/storage-contract.fc)
 
+Provider updates replace the complete provider set; they do not append. Because providers are excluded from StateInit, the same bag and owner derive the same address. Before updating an active contract, include every provider that must remain, or use a different owner for an independent contract.
+
 ### CRON contracts trigger mode
 
 You can enable [cron contracts](https://github.com/xssnick/cron-contract) tracking to earn additional rewards by triggering blockchain's cron contracts deployed by other users. 
