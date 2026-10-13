@@ -307,6 +307,16 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 
 				downloaded = true
 			} else {
+				if startedAt.Before(time.Now().Add(-time.Duration(s.maxMinutesNoProgress) * time.Minute)) {
+					log.Warn().Str("addr", contractAddr.String()).
+						Uint64("size", torrentSize).
+						Str("owner", ownerAddress.String()).
+						Hex("bag", bagId).
+						Msg("info is not downloaded for too long, dropping")
+
+					drop(db.StoredBagStopReasonDownloadStalled)
+					continue
+				}
 				log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("info is not downloaded yet, will wait and check again")
 			}
 		}
