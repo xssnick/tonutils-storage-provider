@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"path/filepath"
+	"time"
+
 	"github.com/xssnick/tonutils-go/tl"
 	"github.com/xssnick/tonutils-storage-provider/pkg/transport"
-	"net/http"
-	"time"
 )
 
 type Client struct {
@@ -82,6 +84,11 @@ func (c *Client) StartDownload(ctx context.Context, bagId []byte, downloadAll bo
 		return fmt.Errorf("error in response: %s", res.Error)
 	}
 	return nil
+}
+
+func (c *Client) IsManagedBagPath(bagID []byte, bagPath string) bool {
+	return c.rootPath != "" && bagPath != "" &&
+		filepath.Clean(bagPath) == filepath.Join(c.rootPath, hex.EncodeToString(bagID))
 }
 
 func (c *Client) RemoveBag(ctx context.Context, bagId []byte, withFiles bool) error {

@@ -204,6 +204,9 @@ func (s *Service) reserveContract(
 	size uint64,
 	info *db.ContractInfo,
 ) (db.StoredBag, bool, error) {
+	s.contractCleanupMu.Lock()
+	defer s.contractCleanupMu.Unlock()
+
 	s.mx.Lock()
 	defer s.mx.Unlock()
 

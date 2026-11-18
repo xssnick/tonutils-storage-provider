@@ -7,6 +7,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/rs/zerolog/log"
 	"github.com/xssnick/tonutils-go/address"
 	"github.com/xssnick/tonutils-go/tlb"
@@ -15,12 +18,57 @@ import (
 	"github.com/xssnick/tonutils-storage-provider/internal/db"
 	"github.com/xssnick/tonutils-storage-provider/pkg/contract"
 	"github.com/xssnick/tonutils-storage-provider/pkg/storage"
-	"math/big"
-	"strings"
-	"time"
 )
 
-func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo) {
+func (s *Service) stopBagContract(ctx context.Context, contractAddr string, bagID []byte, info *db.ContractInfo, reason db.StoredBagStopReason) error {
+	s.contractCleanupMu.Lock()
+	defer s.contractCleanupMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	list, err := s.db.ListContracts()
+	if err != nil {
+		return fmt.Errorf("failed to list contracts from db: %w", err)
+	}
+
+	usedByAnother := ""
+	for _, st := range list {
+		if (st.Status == db.StoredBagStatusActive || st.Status == db.StoredBagStatusAdded) &&
+			st.ContractAddr != contractAddr && bytes.Equal(st.BagID, bagID) {
+			usedByAnother = st.ContractAddr
+			break
+		}
+	}
+
+	if usedByAnother == "" {
+		bag, err := s.storage.GetBag(ctx, bagID)
+		switch {
+		case errors.Is(err, storage.ErrNotFound):
+			log.Info().Str("addr", contractAddr).Hex("bag", bagID).Msg("bag already removed")
+		case err != nil:
+			return fmt.Errorf("failed to get bag from storage: %w", err)
+		case s.storage.IsManagedBagPath(bagID, bag.Path):
+			if err := s.storage.RemoveBag(ctx, bagID, true); err != nil {
+				return fmt.Errorf("failed to remove bag from storage: %w", err)
+			}
+			log.Info().Str("addr", contractAddr).Hex("bag", bagID).Msg("bag removed")
+		default:
+			log.Info().Str("addr", contractAddr).Hex("bag", bagID).Str("path", bag.Path).Msg("bag path does not match the configured provider path")
+		}
+	} else {
+		log.Info().Str("addr", contractAddr).Hex("bag", bagID).Str("another_contract", usedByAnother).Msg("bag is not removed, used by another contract")
+	}
+
+	if err := s.markContractStopped(contractAddr, bagID, info, reason); err != nil {
+		return fmt.Errorf("failed to update contract in db: %w", err)
+	}
+	log.Info().Str("addr", contractAddr).Hex("bag", bagID).Str("reason", string(reason)).Msg("storage for contract stopped")
+	return nil
+}
+
+func (s *Service) bagWorker(contractAddr *address.Address, stored db.StoredBag) {
+	info := stored.ContractInfo
 	var torrentSize uint64
 	var pieceSize uint32
 	var torrentMerkle = make([]byte, 32)
@@ -45,57 +93,8 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 			case <-time.After(wait):
 			}
 
-			if err := func() error {
-				ctx, cancel := context.WithTimeout(s.globalCtx, 15*time.Second)
-				defer cancel()
-
-				usedByAnother := ""
-				list, err := s.db.ListContracts()
-				if err != nil {
-					return fmt.Errorf("failed to list contracts from db: %w", err)
-				}
-
-				for _, st := range list {
-					if st.Status == db.StoredBagStatusActive &&
-						bytes.Equal(st.BagID, bagId) && st.ContractAddr != contractAddr.String() {
-						usedByAnother = st.ContractAddr
-						break
-					}
-				}
-
-				if usedByAnother == "" {
-					bd, err := s.storage.GetBag(ctx, bagId)
-					if err != nil {
-						if errors.Is(err, storage.ErrNotFound) {
-							log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("bag already removed")
-						} else {
-							return fmt.Errorf("failed to get bag from storage: %w", err)
-						}
-					} else if strings.HasSuffix(bd.Path, "/provider/"+hex.EncodeToString(bagId)) {
-						// delete only what provider added
-						if err := s.storage.RemoveBag(ctx, bagId, true); err != nil {
-							return fmt.Errorf("failed to remove bag from storage: %w", err)
-						}
-
-						log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("bag removed")
-					} else {
-						log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Str("path", bd.Path).Msg("bag is not removed, because was added not by provider")
-					}
-				} else {
-					log.Info().Str("addr", contractAddr.String()).Hex("bag", bagId).Str("another_contract", usedByAnother).Msg("bag is not removed, used by another contract")
-				}
-
-				if err := s.markContractStopped(contractAddr.String(), bagId, info, reason); err != nil {
-					return fmt.Errorf("failed to update contract in db: %w", err)
-				}
-				log.Info().
-					Str("addr", contractAddr.String()).
-					Hex("bag", bagId).
-					Str("reason", string(reason)).
-					Msg("storage for contract stopped")
-				return nil
-			}(); err != nil {
-				log.Error().Err(err).Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("failed to set stopped contract to db, will be retried")
+			if err := s.stopBagContract(s.globalCtx, contractAddr.String(), bagId, info, reason); err != nil {
+				log.Error().Err(err).Str("addr", contractAddr.String()).Hex("bag", bagId).Msg("failed to stop storage for contract, will be retried")
 				wait = 3 * time.Second
 
 				continue
@@ -172,6 +171,21 @@ func (s *Service) bagWorker(contractAddr *address.Address, info *db.ContractInfo
 				log.Error().Err(err).Str("addr", contractAddr.String()).Msg("failed to fetch storage contract info, will be retried in 5s")
 				wait = 5 * time.Second
 				continue
+			}
+
+			// Older Added records must register their bag before using storage.
+			if stored.Status == db.StoredBagStatusAdded && len(stored.BagID) == 0 {
+				resolved := stored
+				resolved.BagID = bagId
+				resolved.Size = torrentSize
+				s.contractCleanupMu.Lock()
+				err := s.db.SetContract(resolved)
+				s.contractCleanupMu.Unlock()
+				if err != nil {
+					log.Error().Err(err).Str("addr", contractAddr.String()).Msg("failed to update legacy contract bag, will be retried in 5s")
+					wait = 5 * time.Second
+					continue
+				}
 			}
 
 			contractFetched = true

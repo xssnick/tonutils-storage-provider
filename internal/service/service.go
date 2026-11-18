@@ -35,6 +35,7 @@ type Storage interface {
 	GetBag(ctx context.Context, bagId []byte) (*storage.BagDetailed, error)
 	GetPieceProof(ctx context.Context, bagId []byte, piece uint64) ([]byte, error)
 	StartDownload(ctx context.Context, bagId []byte, downloadAll bool) error
+	IsManagedBagPath(bagID []byte, bagPath string) bool
 	RemoveBag(ctx context.Context, bagId []byte, withFiles bool) error
 	ProofProvider(ctx context.Context) (ed25519.PublicKey, []byte, error)
 }
@@ -58,7 +59,9 @@ type Service struct {
 	warns   map[string]string
 	txQueue *TxQueue
 
-	mx sync.RWMutex
+	// Keep reservations and cleanup serialized through the stopped state write.
+	contractCleanupMu sync.Mutex
+	mx                sync.RWMutex
 }
 
 func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.PrivateKey, w *wallet.Wallet, minRatePerMb tlb.Coins, spaceAllocated, maxBagSize uint64, minSpan, maxSpan, maxMinutesNoProgress uint32) (*Service, error) {
@@ -109,7 +112,7 @@ func NewService(ton ton.APIClientWrapped, storage Storage, xdb DB, key ed25519.P
 			continue
 		}
 
-		go s.bagWorker(contractAddr, bag.ContractInfo)
+		go s.bagWorker(contractAddr, bag)
 	}
 	s.startStoppedReconciler()
 
@@ -271,7 +274,7 @@ func (s *Service) FetchStorageInfo(ctx context.Context, contractAddr *address.Ad
 
 	log.Debug().Str("addr", contractAddr.String()).Msg("contract added for storage")
 
-	go s.bagWorker(contractAddr, info)
+	go s.bagWorker(contractAddr, bag)
 	return s.fetchStorageInfo(ctx, bag, byteToProof, contractAddr.String())
 }
 
